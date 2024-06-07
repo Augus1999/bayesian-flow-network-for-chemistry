@@ -4,7 +4,7 @@
 Training, sampling, and testing on GuacaMol dataset.
 
 e.g.,
-$ python run_guacamol.py --version=smiles --samplestep=100 --datadir=".dataset/guacamol"
+$ python run_guacamol.py --version=smiles --samplestep=100 --datadir="./dataset/guacamol"
 """
 import os
 import argparse
@@ -70,18 +70,15 @@ if args.version.lower() == "smiles":
 else:
     import selfies
 
-    pad_len = 57  # 55 + 2
+    pad_len = 111  # 109 + 2
     dataset_file = args.datadir + "/guacamol_v1_train.selfies"
     vocab_file = cwd / "guacamol_selfies_vocab.txt"
     if not os.path.exists(dataset_file):
         with open(args.datadir + "/guacamol_v1_train.smiles", "r") as f:
             smiles_data = f.readlines()
-        selfies_list = []
-        for i in smiles_data:
-            try:
-                smiles_data.append(selfies.encoder(i.replace("\n", "")))
-            except selfies.EncoderError:
-                ...
+        selfies_list = [
+            selfies.encoder(i.replace("\n", ""), False) for i in smiles_data
+        ]
         if not os.path.exists(vocab_file):
             vocab = []
             for i in selfies_list:
@@ -122,8 +119,7 @@ else:
 
 model = Model(ChemBFN(num_vocab))
 checkpoint_callback = ModelCheckpoint(dirpath=workdir, every_n_train_steps=1000)
-logger_name = f"guacamol_{args.version}"
-logger = loggers.TensorBoardLogger(logdir, logger_name)
+logger = loggers.TensorBoardLogger(logdir, f"guacamol_{args.version}")
 trainer = L.Trainer(
     max_epochs=100,  # you can run it longer
     log_every_n_steps=50,

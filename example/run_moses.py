@@ -4,7 +4,7 @@
 Training, sampling, and testing on MOSES dataset.
 
 e.g.,
-$ python run_moses.py --version=smiles --samplestep=100 --datadir=".dataset/moses"
+$ python run_moses.py --version=smiles --samplestep=100 --datadir="./dataset/moses"
 """
 import os
 import json
@@ -91,8 +91,7 @@ else:
 
 model = Model(ChemBFN(num_vocab))
 checkpoint_callback = ModelCheckpoint(dirpath=workdir, every_n_train_steps=1000)
-logger_name = f"moses_{args.version}"
-logger = loggers.TensorBoardLogger(logdir, logger_name)
+logger = loggers.TensorBoardLogger(logdir, f"moses_{args.version}")
 trainer = L.Trainer(
     max_epochs=100,  # you can run it longer
     log_every_n_steps=50,

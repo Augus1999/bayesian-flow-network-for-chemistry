@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from lightning import LightningModule
 from .model import ChemBFN, MLP
 
-DEFAULT_MODEL_HPARAM = {"lr": 5e-5, "lr_warmup_step": 1000}
+DEFAULT_MODEL_HPARAM = {"lr": 5e-5, "lr_warmup_step": 1000, "uncond_prob": 0.1}
 DEFAULT_REGRESSOR_HPARAM = {
     "mode": "regression",
     "lr_scheduler_factor": 0.8,
@@ -28,7 +28,7 @@ class Model(LightningModule):
     def __init__(
         self,
         model: ChemBFN,
-        cnet: Optional[MLP] = None,
+        mlp: Optional[MLP] = None,
         hparam: Dict[str, Union[int, float]] = DEFAULT_MODEL_HPARAM,
     ) -> None:
         """
@@ -37,21 +37,25 @@ class Model(LightningModule):
         the model(s) will be saved to `YOUR_WORK_DIR/model.pt` and (if exists) `TOUR_WORK_DIR/cnet.pt`.
 
         :param model: `~bayesianflow_for_chem.model.ChemBFN` instance.
-        :param cnet: `~bayesianflow_for_chem.model.MLP` instance or `None`.
+        :param mlp: `~bayesianflow_for_chem.model.MLP` instance or `None`.
         :param hparam: a `dict` instance of hyperparameters. See `bayesianflow_for_chem.train.DEFAULT_MODEL_HPARAM`.
         """
         super().__init__()
         self.model = model
-        self.cnet = cnet
-        self.save_hyperparameters(hparam, ignore=["model", "cnet"])
+        self.mlp = mlp
+        self.save_hyperparameters(hparam, ignore=["model", "mlp"])
 
     def training_step(self, batch: Dict[str, Tensor]) -> Tensor:
         x = batch["token"]
         t = torch.rand((x.shape[0], 1), device=x.device)
-        if self.cnet is not None:
+        if self.mlp is not None:
             y = batch["value"]
-            y = self.cnet(y)[:, None, :]
-            loss = self.model.cts_loss(x, t, y)
+            y = self.mlp.forward(y)
+            if y.dim() == 2:
+                y = y[:, None, :]
+            y_mask = F.dropout(torch.ones_like(t), self.hparams.uncond_prob, True, True)
+            y_mask = (y_mask != 0).float()[..., None]
+            loss = self.model.cts_loss(x, t, y * y_mask)
         else:
             loss = self.model.cts_loss(x, t, None)
         self.log("train_loss", loss.item())
@@ -83,10 +87,10 @@ class Model(LightningModule):
             {"nn": self.model.state_dict(), "hparam": self.model.hparam},
             workdir / "model.pt",
         )
-        if self.cnet is not None:
+        if self.mlp is not None:
             torch.save(
-                {"nn": self.cnet.state_dict(), "hparam": self.cnet.hparam},
-                workdir / "cnet.pt",
+                {"nn": self.mlp.state_dict(), "hparam": self.mlp.hparam},
+                workdir / "mlp.pt",
             )
 
 
@@ -135,7 +139,7 @@ class Regressor(LightningModule):
         x, y = batch["token"], batch["value"]
         z = self.model.inference(x, self.mlp)
         if self.hparams.mode == "classification":
-            val_loss = (torch.argmax(z, -1) == y).float().mean()
+            val_loss = 1 - (torch.argmax(z, -1) == y).float().mean()
         else:
             y_mask, y = self._mask_label(y)
             val_loss = (z * y_mask - y).abs().sum() / y_mask.sum()

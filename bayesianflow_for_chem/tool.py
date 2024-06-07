@@ -147,6 +147,7 @@ def sample(
     sequence_size: int,
     sample_step: int = 1000,
     y: Optional[Tensor] = None,
+    guidance_strength: float = 4.0,
     device: Union[str, torch.device, None] = None,
     vocab_keys: List[str] = VOCAB_KEYS,
 ) -> List[str]:
@@ -158,6 +159,7 @@ def sample(
     :param sequence_size: max sequence length
     :param sample_step: number of sampling steps
     :param y: conditioning vector;      shape: (n_b, 1, n_f)
+    :param guidance_strength: strength of conditional generation. It is not used if y is null.
     :param device: hardware accelerator
     :param vocab_keys: a list of (ordered) vocabulary
     :return: a list of generated SMILES strings
@@ -165,7 +167,7 @@ def sample(
     if device is None:
         device = _find_device()
     model.to(device).eval()
-    tokens = model.sample(batch_size, sequence_size, y, sample_step)
+    tokens = model.sample(batch_size, sequence_size, y, sample_step, guidance_strength)
     smiles = [
         "".join([vocab_keys[i] for i in j])
         .split("<start>")[-1]

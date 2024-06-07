@@ -355,6 +355,7 @@ class ChemBFN(nn.Module):
         sequence_size: int,
         y: Optional[Tensor],
         sample_step: int = 1000,
+        guidance_strength: float = 4.0,
     ) -> Tensor:
         """
         Sample from a piror distribution.
@@ -363,6 +364,7 @@ class ChemBFN(nn.Module):
         :param sequence_size: max sequence length
         :param y: conditioning vector;      shape: (n_b, 1, n_f)
         :param sample_step: number of sampling steps
+        :param guidance_strength: strength of conditional generation. It is not used if y is null.
         :return: probability distribution;  shape: (n_b, n_t, n_vocab)
         """
         self.eval()
@@ -372,7 +374,14 @@ class ChemBFN(nn.Module):
         )
         for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
             t = (i - 1).view(1, 1).repeat(batch_size, 1) / sample_step
-            p = self.discrete_output_distribution(theta, t, y)
+            if y is None:
+                p = self.discrete_output_distribution(theta, t, None)
+            else:
+                p = (1 + guidance_strength) * self.discrete_output_distribution(
+                    theta, t, y
+                ) - guidance_strength * self.discrete_output_distribution(
+                    theta, t, None
+                )
             alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)[..., None]
             e_k = nn.functional.one_hot(torch.argmax(p, -1), self.K).float()
             mu = alpha * (self.K * e_k - 1)
@@ -380,7 +389,14 @@ class ChemBFN(nn.Module):
             theta = (mu + sigma * torch.randn_like(mu)).exp() * theta
             theta = theta / theta.sum(-1, True)
         t_final = torch.ones((batch_size, 1), device=self.beta.device)
-        p = self.discrete_output_distribution(theta, t_final, y)
+        if y is None:
+            p = self.discrete_output_distribution(theta, t_final, None)
+        else:
+            p = (1 + guidance_strength) * self.discrete_output_distribution(
+                theta, t_final, y
+            ) - guidance_strength * self.discrete_output_distribution(
+                theta, t_final, None
+            )
         return torch.argmax(p, -1)
 
     def inference(self, x: Tensor, mlp: nn.Module) -> Tensor:
@@ -421,24 +437,34 @@ class ChemBFN(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, size: List[int]) -> None:
+    def __init__(self, size: List[int], class_input: bool = False) -> None:
         """
         MLP module.
 
-        :param size: hidden feature sizes\n
+        :param size: hidden feature sizes
+        :param class_input: whether the input is class indices\n
         e.g.
         ```python
-        mlp = MLP(size=[512, 64, 1])
+        mlp = MLP(size=[512, 256, 1])
+        mlp = MLP(size=[10, 256, 512], True)  # embedding 10 classes
         ```
         """
         super().__init__()
+        assert len(size) >= 2
         self.layers = nn.ModuleList(
             [nn.Linear(i, size[key + 1]) for key, i in enumerate(size[:-2])]
         )
+        if class_input:
+            self.layers[0] = nn.Embedding(size[0], size[1])
         self.layers.append(nn.Linear(size[-2], size[-1]))
-        self.hparam = dict(size=size)
+        self.hparam = dict(size=size, class_input=class_input)
 
     def forward(self, x: Tensor) -> Tensor:
+        """
+        :param x: input tensor;  shape: (n_b, n_input)
+        :return: output tensor;  shape: (n_b, n_output) if not class_input;
+                                        (n_b, 1, n_output) if class_input
+        """
         for layer in self.layers[:-1]:
             x = torch.selu(layer(x))
         return self.layers[-1](x)
@@ -455,7 +481,7 @@ class MLP(nn.Module):
         with open(ckpt, "rb") as f:
             state = torch.load(f, "cpu")
         nn, hparam = state["nn"], state["hparam"]
-        model = MLP(hparam["size"])
+        model = MLP(hparam["size"], hparam["class_input"])
         model.load_state_dict(nn, strict)
         return model
 
