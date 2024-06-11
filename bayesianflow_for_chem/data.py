@@ -165,6 +165,8 @@ class CSVData(BaseCSVDataClass):
         values = [
             float(d[i]) if d[i].strip() != "" else torch.inf for i in self.value_idx
         ]
+        if self.label_idx:
+            values = [values[i] for i in self.label_idx]
         token = smiles2token(smiles)
         if len(values) != 0:
             value = torch.tensor(values, dtype=torch.float32)

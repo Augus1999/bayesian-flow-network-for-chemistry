@@ -30,6 +30,7 @@ parser.add_argument(
 )
 parser.add_argument("--name", default="esol", type=str, help="dataset name")
 parser.add_argument("--nepoch", default=100, type=int, help="number of epochs")
+parser.add_argument("--ntask", default=1, type=int, help="number of tasks")
 parser.add_argument(
     "--mode", default="regression", type=str, help="regression or classification"
 )
@@ -49,7 +50,7 @@ l_hparam = {
 }
 
 model = ChemBFN.from_checkpoint(args.ckpt)
-mlp = MLP([512, 256, 1])
+mlp = MLP([512, 256, args.ntask])
 regressor = Regressor(model, mlp, l_hparam)
 
 checkpoint_callback = ModelCheckpoint(dirpath=workdir, monitor="val_loss")
@@ -74,9 +75,6 @@ testdata = DataLoader(
 if __name__ == "__main__":
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:64"
     trainer.fit(regressor, traindata, valdata)
-    regressor = Regressor.load_from_checkpoint(
-        trainer.checkpoint_callback.best_model_path, model=model, mlp=mlp
-    )
     regressor.export_model(workdir)
-    result = test(regressor.model, regressor.mlp, testdata, l_hparam["mode"])
+    result = test(model, regressor.mlp, testdata, l_hparam["mode"])
     print(result)

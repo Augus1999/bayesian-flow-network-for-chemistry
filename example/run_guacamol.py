@@ -170,6 +170,7 @@ if __name__ == "__main__":
         assess_distribution_learning(
             generator,
             chembl_training_file=args.datadir + "/guacamol_v1_train.smiles",
-            json_output_file=cwd / f"guacamol_sample_{i}_metrics.json",
+            json_output_file=cwd
+            / f"guacamol_{args.version}_sample_{i}_metrics_samplestep_{args.samplestep}.json",
             benchmark_version="v2",
         )

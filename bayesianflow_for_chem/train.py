@@ -115,6 +115,7 @@ class Regressor(LightningModule):
         self.mlp = mlp
         self.model.requires_grad_(not hparam["freeze"])
         self.save_hyperparameters(hparam, ignore=["model", "mlp"])
+        assert hparam["mode"] in ("regression", "classification")
 
     @staticmethod
     def _mask_label(label: Tensor) -> Tuple[Tensor, Tensor]:
