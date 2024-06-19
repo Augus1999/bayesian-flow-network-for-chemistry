@@ -356,13 +356,13 @@ class ChemBFN(nn.Module):
         x, logits = torch.broadcast_tensors(x[..., None], logits)
         return (-logits.gather(-1, x[..., :1]).squeeze(-1)).mean()
 
-    @torch.inference_mode()
+    @torch.jit.export
     def sample(
         self,
         batch_size: int,
         sequence_size: int,
         y: Optional[Tensor],
-        sample_step: int = 1000,
+        sample_step: int = 100,
         guidance_strength: float = 4.0,
     ) -> Tensor:
         """
@@ -375,11 +375,14 @@ class ChemBFN(nn.Module):
         :param guidance_strength: strength of conditional generation. It is not used if y is null.
         :return: probability distribution;  shape: (n_b, n_t, n_vocab)
         """
-        self.eval()
         theta = (
             torch.ones((batch_size, sequence_size, self.K), device=self.beta.device)
             / self.K
         )
+        if y is not None:
+            assert y.dim() == 3
+            if y.shape[0] == 1:
+                y = y.repeat(batch_size, 1, 1)
         for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
             t = (i - 1).view(1, 1).repeat(batch_size, 1) / sample_step
             p = self.discrete_output_distribution(theta, t, y, guidance_strength)

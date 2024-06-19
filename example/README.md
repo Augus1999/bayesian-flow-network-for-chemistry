@@ -9,4 +9,4 @@ $ python run_moses.py --datadir={YOUR_MOSES_DATASET_FOLDER} --samplestep=100
 $ python run_guacamol.py --datadir={YOUR_GUACAMOL_DATASET_FOLDER} --samplestep=100
 ```
 
-You can switch to the SELFIES version by using flag `--version=selfies`, but the package `selfies` is required before hand.
+You can switch to the SELFIES version by using flag `--version=selfies`, but the package `selfies` is required.

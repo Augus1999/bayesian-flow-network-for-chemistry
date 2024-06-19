@@ -4,7 +4,7 @@
 Fine-tuning.
 
 e.g.,
-$ python fintune.py --name=esol --nepoch=300 --datadir="./dataset/moleculenet" --ckpt="./ckpt/zinc15_40m.pt" --mode="regression"
+$ python fintune.py --name=esol --nepoch=100 --datadir="./dataset/moleculenet" --ckpt="./ckpt/zinc15_40m.pt" --mode="regression"
 """
 import os
 import argparse

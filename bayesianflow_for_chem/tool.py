@@ -141,11 +141,12 @@ def split_dataset(
         writer.writerows([header] + val_set)
 
 
+@torch.no_grad()
 def sample(
     model: ChemBFN,
     batch_size: int,
     sequence_size: int,
-    sample_step: int = 1000,
+    sample_step: int = 100,
     y: Optional[Tensor] = None,
     guidance_strength: float = 4.0,
     device: Union[str, torch.device, None] = None,
