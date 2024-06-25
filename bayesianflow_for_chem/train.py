@@ -107,7 +107,7 @@ class Regressor(LightningModule):
         the models will be saved to `YOUR_WORK_DIR/model.pt` and `TOUR_WORK_DIR/readout.pt`.
 
         :param model: `~bayesianflow_for_chem.model.ChemBFN` instance.
-        :param cnet: `~bayesianflow_for_chem.model.MLP` instance or `None`.
+        :param mlp: `~bayesianflow_for_chem.model.MLP` instance.
         :param hparam: a `dict` instance of hyperparameters. See `bayesianflow_for_chem.train.DEFAULT_REGRESSOR_HPARAM`.
         """
         super().__init__()

@@ -1,4 +1,5 @@
 ## This folder contains example scripts.
+
 * To run the example of MOSES dataset, you should first install `moses` package by following the instruction [here](https://github.com/molecularsets/moses/blob/master/README.md#manually), then excute the python script as:
 ```bash
 $ python run_moses.py --datadir={YOUR_MOSES_DATASET_FOLDER} --samplestep=100
@@ -10,3 +11,16 @@ $ python run_guacamol.py --datadir={YOUR_GUACAMOL_DATASET_FOLDER} --samplestep=1
 ```
 
 You can switch to the SELFIES version by using flag `--version=selfies`, but the package `selfies` is required.
+
+## JIT version?
+
+Our implementation supports TorchScript.
+```python
+import torch
+from bayesianflow_for_chem import ChemBFN
+from bayesianflow_for_chem.tool import sample
+
+model = ChemBFN.from_checkpoint("YOUR_MODEL.pt").eval().to("cuda")
+model = torch.jit.freeze(torch.jit.script(model), ["sample"])
+smiles = sample(model, 1, 60, 100)
+```

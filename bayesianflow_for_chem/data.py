@@ -135,7 +135,7 @@ class BaseCSVDataClass(Dataset):
         self.smiles_idx, self.selfies_idx, self.value_idx = [], [], []
         for key, i in enumerate(self.data[0].replace("\n", "").split(",")):
             i = i.lower()
-            if i == "smiles":
+            if i == "smiles" or i == "safe":
                 self.smiles_idx.append(key)
             if i == "selfies":
                 self.selfies_idx.append(key)

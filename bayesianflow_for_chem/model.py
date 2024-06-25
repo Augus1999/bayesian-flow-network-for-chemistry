@@ -96,12 +96,20 @@ class Attention(nn.Module):
         k = k.view(split).permute(2, 0, 1, 3).contiguous()
         v = v.view(split).permute(2, 0, 1, 3).contiguous()
         q, k = self._rotate(q, k, pe)  # position embedding
+        """
+        # Original code. Maybe using `nn.functional.scaled_dot_product_attention(...)` is better.
+
         k_t = k.transpose(-2, -1)
         if mask is not None:
             alpha = softmax((q @ k_t / self.tp).masked_fill_(mask, -torch.inf), -1)
         else:
             alpha = softmax(q @ k_t / self.tp, -1)
         atten_out = (alpha @ v).permute(1, 2, 0, 3).contiguous().view(shape)
+        """
+        atten_out = nn.functional.scaled_dot_product_attention(
+            q, k, v, mask, 0.0, False, scale=1 / self.tp
+        )
+        atten_out = atten_out.permute(1, 2, 0, 3).contiguous().view(shape)
         return atten_out
 
 
@@ -180,13 +188,13 @@ class FinalLayer(nn.Module):
         :param c: conditioning;                 shape: (n_b, 1, n_f)
         :param return_logits: whether to return unnormalised output logits
         :return: output logits (unnormalised);  shape: (n_b, n_t, n_vocab)
-                 or first latent vector;        shape: (n_b, n_f)
+                 or token embeddings;           shape: (n_b, n_t, n_f)
         """
         shift, scale = self.adaln_modulation(c).chunk(2, -1)
         x = modulate(self.norm_final(x), shift, scale)
         if return_logits:
             return self.linear(x)
-        return x[::, 0]
+        return x
 
 
 class ChemBFN(nn.Module):
@@ -240,7 +248,7 @@ class ChemBFN(nn.Module):
         :param mask: input mask;                             shape: (n_b, n_t, 1)
         :param y: conditioning vector;                       shape: (n_b, 1, n_f)
         :return: probability distribution (before softmax);  shape: (n_b, n_t, n_vocab)
-                 or first latent vector;                     shape: (n_b, n_f)
+                 or token embeddings;                        shape: (n_b, n_t, n_f)
         """
         c = self.time_embed(t)[:, None, :]
         if y is not None:
@@ -248,7 +256,12 @@ class ChemBFN(nn.Module):
         pe = self.position(x.shape[1])
         x = self.embedding(x)
         if mask is not None:
+            """
+            # Original Code.
+
             mask = mask.transpose(-2, -1).repeat(1, x.shape[1], 1)[None, ...] == 0
+            """
+            mask = mask.transpose(-2, -1).repeat(1, x.shape[1], 1)[None, ...] != 0
         for layer in self.encoder_layers:
             x = layer(x, pe, c, mask)
         return self.final_layer(x, c, mask is None)
@@ -380,7 +393,7 @@ class ChemBFN(nn.Module):
             / self.K
         )
         if y is not None:
-            assert y.dim() == 3
+            assert y.dim() == 3  # this doesn't work if the model is frezen in JIT.
             if y.shape[0] == 1:
                 y = y.repeat(batch_size, 1, 1)
         for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
@@ -408,7 +421,7 @@ class ChemBFN(nn.Module):
         mask = (x != 0).float()[..., None]
         theta = 2 * torch.nn.functional.one_hot(x, self.K).float() - 1
         z = self.forward(theta, t, mask, None)
-        return mlp.forward(z)
+        return mlp.forward(z[::, 0])
 
     @classmethod
     def from_checkpoint(cls, ckpt: str, strict: bool = True) -> Self:
