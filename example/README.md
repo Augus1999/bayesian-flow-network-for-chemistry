@@ -18,9 +18,16 @@ Our implementation supports TorchScript.
 ```python
 import torch
 from bayesianflow_for_chem import ChemBFN
-from bayesianflow_for_chem.tool import sample
+from bayesianflow_for_chem.data import smiles2vec
+from bayesianflow_for_chem.tool import sample, inpaint
 
 model = ChemBFN.from_checkpoint("YOUR_MODEL.pt").eval().to("cuda")
-model = torch.jit.freeze(torch.jit.script(model), ["sample"])
+model = torch.jit.freeze(torch.jit.script(model), ["sample", "inpaint"])
+# ------- generate molecules -------
 smiles = sample(model, 1, 60, 100)
+# ------- inpaint (sacffold extension) -------
+scaffold = r"Cc1cc(OC5)cc(C6)c1."
+x = torch.tensor([1] + smiles2vec(scaffold) + [0] * (84 - len(scaffold)), dtype=torch.long)
+x = x[None, ...].repeat(5, 1).to("cuda")
+smiles = inpaint(model, x, 100)
 ```

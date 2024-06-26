@@ -163,17 +163,51 @@ def sample(
     :param guidance_strength: strength of conditional generation. It is not used if y is null.
     :param device: hardware accelerator
     :param vocab_keys: a list of (ordered) vocabulary
-    :return: a list of generated SMILES strings
+    :return: a list of generated molecular strings
     """
     if device is None:
         device = _find_device()
     model.to(device).eval()
     tokens = model.sample(batch_size, sequence_size, y, sample_step, guidance_strength)
-    smiles = [
+    return [
         "".join([vocab_keys[i] for i in j])
         .split("<start>")[-1]
         .split("<end>")[0]
         .replace("<pad>", "")
         for j in tokens
     ]
-    return smiles
+
+
+@torch.no_grad()
+def inpaint(
+    model: ChemBFN,
+    x: Tensor,
+    sample_step: int = 100,
+    y: Optional[Tensor] = None,
+    guidance_strength: float = 4.0,
+    device: Union[str, torch.device, None] = None,
+    vocab_keys: List[str] = VOCAB_KEYS,
+) -> List[str]:
+    """
+    Sampling.
+
+    :param model: trained ChemBFN model
+    :param x: categorical indices of scaffold;  shape: (n_b, n_t)
+    :param sample_step: number of sampling steps
+    :param y: conditioning vector;              shape: (n_b, 1, n_f)
+    :param guidance_strength: strength of conditional generation. It is not used if y is null.
+    :param device: hardware accelerator
+    :param vocab_keys: a list of (ordered) vocabulary
+    :return: a list of generated molecular strings
+    """
+    if device is None:
+        device = _find_device()
+    model.to(device).eval()
+    tokens = model.inpaint(x, y, sample_step, guidance_strength)
+    return [
+        "".join([vocab_keys[i] for i in j])
+        .split("<start>")[-1]
+        .split("<end>")[0]
+        .replace("<pad>", "")
+        for j in tokens
+    ]

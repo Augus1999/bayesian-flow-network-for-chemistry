@@ -409,6 +409,41 @@ class ChemBFN(nn.Module):
         p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
         return torch.argmax(p, -1)
 
+    @torch.jit.export
+    def inpaint(
+        self,
+        x: Tensor,
+        y: Optional[Tensor] = None,
+        sample_step: int = 100,
+        guidance_strength: float = 4.0,
+    ) -> Tensor:
+        """
+        Molecule inpaint functionality.
+
+        :param x: categorical indices of scaffold;  shape: (n_b, n_t)
+        :param y: conditioning vector;              shape: (n_b, 1, n_f)
+        :param sample_step: number of sampling steps
+        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :return: probability distribution;          shape: (n_b, n_t, n_vocab)
+        """
+        mask = (x != 0).float()[..., None]
+        theta = torch.ones((x.shape[0], x.shape[1], self.K), device=x.device) / self.K
+        x_onehot = nn.functional.one_hot(x, self.K) * mask
+        theta = x_onehot + (1 - mask) * theta
+        for i in torch.linspace(1, sample_step, sample_step, device=x.device):
+            t = (i - 1).view(1, 1).repeat(x.shape[0], 1) / sample_step
+            p = self.discrete_output_distribution(theta, t, y, guidance_strength)
+            alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)[..., None]
+            e_k = nn.functional.one_hot(torch.argmax(p, -1), self.K).float()
+            mu = alpha * (self.K * e_k - 1)
+            sigma = (alpha * self.K).sqrt()
+            theta = (mu + sigma * torch.randn_like(mu)).exp() * theta
+            theta = theta / theta.sum(-1, True)
+            theta = x_onehot + (1 - mask) * theta
+        t_final = torch.ones((x.shape[0], 1), device=x.device)
+        p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
+        return torch.argmax(p, -1)
+
     def inference(self, x: Tensor, mlp: nn.Module) -> Tensor:
         """
         Predict from SMILES tokens.
