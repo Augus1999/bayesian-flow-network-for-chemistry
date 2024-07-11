@@ -10,7 +10,14 @@ import torch
 from torch import cuda, Tensor, softmax
 from torch.utils.data import DataLoader
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
-from sklearn.metrics import roc_auc_score, auc, precision_recall_curve
+from sklearn.metrics import (
+    roc_auc_score,
+    auc,
+    precision_recall_curve,
+    r2_score,
+    mean_absolute_error,
+    mean_squared_error,
+)
 from .data import VOCAB_KEYS
 from .model import ChemBFN, MLP
 
@@ -39,42 +46,42 @@ def test(
     :param data: DataLoader instance
     :param mode: testing mode chosen from `'regression'` and `'classification'`
     :param device: hardware accelerator
-    :return: MAE & RMSE & MAPE / ROC-AUC & PRC-AUC
+    :return: MAE & RMSE & R^2 / ROC-AUC & PRC-AUC
     """
     if device is None:
         device = _find_device()
     model.to(device).eval()
     mlp.to(device).eval()
-    tae, tse, tape, scale = 0, 0, 0, 0
-    predict_cls, label_cls = [], []
+    predict_y, label_y = [], []
     for d in data:
         x, y = d["token"].to(device), d["value"]
         if mode == "regression":
-            y = y.to(device)
-            label_mask = (y != torch.inf).float()
-            y_mask = y.masked_fill(y == torch.inf, 0)
-            y_hat = model.inference(x, mlp) * label_mask
-            l1 = (y_hat - y_mask).abs().sum(0).detach()
-            l2 = (y_hat - y_mask).pow(2).sum(0).detach()
-            l3 = ((y_hat - y_mask).abs() / y).sum(0).detach()
-            tae += l1.to("cpu").numpy()
-            tse += l2.to("cpu").numpy()
-            tape += l3.to("cpu").numpy()
-            scale += label_mask.sum(0).detach().to("cpu").numpy()
+            y_hat = model.inference(x, mlp)
+            label_y.append(y)
         if mode == "classification":
             y_hat = softmax(model.inference(x, mlp), -1)
-            predict_cls.append(y_hat.detach().to("cpu"))
-            label_cls.append(y.flatten())
+            label_y.append(y.flatten())
+        predict_y.append(y_hat.detach().to("cpu"))
+    predict_y, label_y = torch.cat(predict_y, 0), torch.cat(label_y, 0)
     if mode == "regression":
-        MAE = list(tae / scale)
-        RMSE = list((tse / scale) ** 0.5)
-        MAPE = list(100 * tape / scale)
-        return {"MAE": MAE, "RMSE": RMSE, "MAPE": MAPE}
+        label_y = label_y.split(1, -1)
+        predict_y = [
+            predict[label_y[i] != torch.inf]
+            for (i, predict) in enumerate(predict_y.split(1, -1))
+        ]
+        label_y = [label[label != torch.inf] for label in label_y]
+        y_zipped = list(zip(label_y, predict_y))
+        mae = [mean_absolute_error(label, predict) for (label, predict) in y_zipped]
+        rmse = [
+            mean_squared_error(label, predict) ** 0.5 for (label, predict) in y_zipped
+        ]
+        r2 = [r2_score(label, predict) for (label, predict) in y_zipped]
+        return {"MAE": mae, "RMSE": rmse, "R^2": r2}
     if mode == "classification":
-        predict_cls = torch.cat(predict_cls, 0).numpy()
-        label_cls = torch.cat(label_cls, -1).numpy()
-        roc_auc = roc_auc_score(label_cls, predict_cls[:, 1])
-        precision, recall, _ = precision_recall_curve(label_cls, predict_cls[:, 1])
+        predict_y = predict_y.numpy()
+        label_y = label_y.numpy()
+        roc_auc = roc_auc_score(label_y, predict_y[:, 1])
+        precision, recall, _ = precision_recall_curve(label_y, predict_y[:, 1])
         prc_auc = auc(recall, precision)
         return {"ROC-AUC": roc_auc, "PRC-AUC": prc_auc}
 

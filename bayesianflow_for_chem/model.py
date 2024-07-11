@@ -88,9 +88,8 @@ class Attention(nn.Module):
         :param mask: attention mask;   shape: (1, n_b, n_t, n_t)
         :return: attentioned output;   shape: (n_b, n_t, n_f)
         """
-        n_b, n_a, _ = x.shape
+        n_b, n_a, _ = shape = x.shape
         split = (n_b, n_a, self.nh, self.d)
-        shape = x.shape
         q, k, v = self.qkv(x).chunk(3, -1)
         q = q.view(split).permute(2, 0, 1, 3).contiguous()
         k = k.view(split).permute(2, 0, 1, 3).contiguous()

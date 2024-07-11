@@ -102,13 +102,13 @@ def collate(batch: List) -> Dict[str, Tensor]:
         lmax = int(os.environ["MAX_PADDING_LENGTH"])
     else:
         lmax = max([len(w) for w in token])
-    token = [F.pad(i, (0, lmax - len(i)), value=0)[None, :] for i in token]
-    token = torch.cat(token, 0)
+    token = torch.cat(
+        [F.pad(i, (0, lmax - len(i)), value=0)[None, :] for i in token], 0
+    )
+    out_dict = {"token": token}
     if "value" in batch[0]:
-        value = [i["value"][None, :] for i in batch]
-        value = torch.cat(value, 0)
-        return {"token": token, "value": value}
-    return {"token": token}
+        out_dict["value"] = torch.cat([i["value"][None, :] for i in batch], 0)
+    return out_dict
 
 
 class BaseCSVDataClass(Dataset):
@@ -168,10 +168,10 @@ class CSVData(BaseCSVDataClass):
         if self.label_idx:
             values = [values[i] for i in self.label_idx]
         token = smiles2token(smiles)
+        out_dict = {"token": token}
         if len(values) != 0:
-            value = torch.tensor(values, dtype=torch.float32)
-            return {"token": token, "value": value}
-        return {"token": token}
+            out_dict["value"] = torch.tensor(values, dtype=torch.float32)
+        return out_dict
 
 
 if __name__ == "__main__":

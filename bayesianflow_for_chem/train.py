@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from lightning import LightningModule
 from .model import ChemBFN, MLP
 
-DEFAULT_MODEL_HPARAM = {"lr": 5e-5, "lr_warmup_step": 1000, "uncond_prob": 0.1}
+DEFAULT_MODEL_HPARAM = {"lr": 5e-5, "lr_warmup_step": 1000, "uncond_prob": 0.2}
 DEFAULT_REGRESSOR_HPARAM = {
     "mode": "regression",
     "lr_scheduler_factor": 0.8,
