@@ -108,6 +108,11 @@ def collate(batch: List) -> Dict[str, Tensor]:
     out_dict = {"token": token}
     if "value" in batch[0]:
         out_dict["value"] = torch.cat([i["value"][None, :] for i in batch], 0)
+    if "mask" in batch[0]:
+        mask = [i["mask"] for i in batch]
+        out_dict["mask"] = torch.cat(
+            [F.pad(i, (0, lmax - len(i)), value=0)[None, :] for i in mask], 0
+        )
     return out_dict
 
 

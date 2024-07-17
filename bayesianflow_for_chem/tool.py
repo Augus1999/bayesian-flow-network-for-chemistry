@@ -175,6 +175,8 @@ def sample(
     if device is None:
         device = _find_device()
     model.to(device).eval()
+    if y is not None:
+        y = y.to(device)
     tokens = model.sample(batch_size, sequence_size, y, sample_step, guidance_strength)
     return [
         "".join([vocab_keys[i] for i in j])
@@ -210,7 +212,9 @@ def inpaint(
     if device is None:
         device = _find_device()
     model.to(device).eval()
-    tokens = model.inpaint(x, y, sample_step, guidance_strength)
+    if y is not None:
+        y = y.to(device)
+    tokens = model.inpaint(x.to(device), y, sample_step, guidance_strength)
     return [
         "".join([vocab_keys[i] for i in j])
         .split("<start>")[-1]

@@ -34,7 +34,7 @@ class Model(LightningModule):
         """
         A `~lightning.LightningModule` wrapper of bayesian flow network for chemistry model.\n
         This module is used in training stage only. By calling `Model(...).export_model(YOUR_WORK_DIR)` after training,
-        the model(s) will be saved to `YOUR_WORK_DIR/model.pt` and (if exists) `TOUR_WORK_DIR/cnet.pt`.
+        the model(s) will be saved to `YOUR_WORK_DIR/model.pt` and (if exists) `YOUR_WORK_DIR/mlp.pt`.
 
         :param model: `~bayesianflow_for_chem.model.ChemBFN` instance.
         :param mlp: `~bayesianflow_for_chem.model.MLP` instance or `None`.
@@ -48,6 +48,10 @@ class Model(LightningModule):
     def training_step(self, batch: Dict[str, Tensor]) -> Tensor:
         x = batch["token"]
         t = torch.rand((x.shape[0], 1), device=x.device)
+        if "mask" in batch:
+            mask = batch["mask"]
+        else:
+            mask = None
         if self.mlp is not None:
             y = batch["value"]
             y = self.mlp.forward(y)
@@ -55,9 +59,9 @@ class Model(LightningModule):
                 y = y[:, None, :]
             y_mask = F.dropout(torch.ones_like(t), self.hparams.uncond_prob, True, True)
             y_mask = (y_mask != 0).float()[..., None]
-            loss = self.model.cts_loss(x, t, y * y_mask)
+            loss = self.model.cts_loss(x, t, y * y_mask, mask)
         else:
-            loss = self.model.cts_loss(x, t, None)
+            loss = self.model.cts_loss(x, t, None, mask)
         self.log("train_loss", loss.item())
         return loss
 
@@ -104,7 +108,7 @@ class Regressor(LightningModule):
         """
         A `~lightning.LightningModule` wrapper of bayesian flow network for chemistry regression model.\n
         This module is used in training stage only. By calling `Regressor(...).export_model(YOUR_WORK_DIR)` after training,
-        the models will be saved to `YOUR_WORK_DIR/model.pt` and `TOUR_WORK_DIR/readout.pt`.
+        the models will be saved to `YOUR_WORK_DIR/model.pt` and `YOUR_WORK_DIR/readout.pt`.
 
         :param model: `~bayesianflow_for_chem.model.ChemBFN` instance.
         :param mlp: `~bayesianflow_for_chem.model.MLP` instance.

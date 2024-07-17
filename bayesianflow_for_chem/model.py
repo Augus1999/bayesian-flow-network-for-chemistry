@@ -331,13 +331,16 @@ class ChemBFN(nn.Module):
             p_uncond = self.forward(theta, t, None, None)
             return softmax((1 + w) * p_cond - w * p_uncond, -1)
 
-    def cts_loss(self, x: Tensor, t: Tensor, y: Optional[Tensor]) -> Tensor:
+    def cts_loss(
+        self, x: Tensor, t: Tensor, y: Optional[Tensor], mask: Optional[Tensor] = None
+    ) -> Tensor:
         """
         Compute continuous-time loss.
 
         :param x: target data;                shape: (n_b, n_t)
         :param t: continuous time in [0, 1);  shape: (n_b, 1)
         :param y: conditioning vector;        shape: (n_b, 1, n_f)
+        :param mask: in-text mask;            shape: (n_b, n_t)
         :return: continuous-time loss;        shape: ()
         """
         beta = self.calc_beta(t)[..., None]  # shape: (n_b, 1, 1)
@@ -345,6 +348,9 @@ class ChemBFN(nn.Module):
         mu = beta * (self.K * e_x - 1)
         sigma = (beta * self.K).sqrt()
         theta = softmax(mu + sigma * torch.randn_like(mu), -1)
+        if mask is not None:
+            mask = mask[..., None]
+            theta = e_x * mask + (1 - mask) * theta
         e_hat = self.discrete_output_distribution(theta, t, y, None)
         cts_loss = self.K * (e_x - e_hat).pow(2) * self.calc_cts_alpha(t)[..., None]
         return cts_loss.mean()
