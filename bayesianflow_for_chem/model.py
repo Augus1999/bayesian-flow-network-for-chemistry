@@ -487,12 +487,15 @@ class ChemBFN(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, size: List[int], class_input: bool = False) -> None:
+    def __init__(
+        self, size: List[int], class_input: bool = False, dropout: float = 0.0
+    ) -> None:
         """
         MLP module.
 
         :param size: hidden feature sizes
-        :param class_input: whether the input is class indices\n
+        :param class_input: whether the input is class indices
+        :param dropout: dropout frequency\n
         e.g.
         ```python
         mlp = MLP(size=[512, 256, 1])
@@ -501,13 +504,14 @@ class MLP(nn.Module):
         """
         super().__init__()
         assert len(size) >= 2
+        self.dropout = nn.Dropout(dropout if not class_input else 0.0)
         self.layers = nn.ModuleList(
             [nn.Linear(i, size[key + 1]) for key, i in enumerate(size[:-2])]
         )
         if class_input:
             self.layers[0] = nn.Embedding(size[0], size[1])
         self.layers.append(nn.Linear(size[-2], size[-1]))
-        self.hparam = dict(size=size, class_input=class_input)
+        self.hparam = dict(size=size, class_input=class_input, dropout=dropout)
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -515,6 +519,7 @@ class MLP(nn.Module):
         :return: output tensor;  shape: (n_b, n_output) if not class_input;
                                         (n_b, 1, n_output) if class_input
         """
+        x = self.dropout(x)
         for layer in self.layers[:-1]:
             x = torch.selu(layer(x))
         return self.layers[-1](x)
@@ -531,7 +536,7 @@ class MLP(nn.Module):
         with open(ckpt, "rb") as f:
             state = torch.load(f, "cpu")
         nn, hparam = state["nn"], state["hparam"]
-        model = MLP(hparam["size"], hparam["class_input"])
+        model = MLP(hparam["size"], hparam["class_input"], hparam["dropout"])
         model.load_state_dict(nn, strict)
         return model
 
