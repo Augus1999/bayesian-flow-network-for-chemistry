@@ -4,7 +4,7 @@
 Fine-tuning.
 
 e.g.,
-$ python fintune.py --name=esol --nepoch=100 --datadir="./dataset/moleculenet" --ckpt="./ckpt/zinc15_40m.pt" --mode="regression"
+$ python fintune.py --name=esol --nepoch=100 --datadir="./dataset/moleculenet" --ckpt="./ckpt/zinc15_40m.pt" --mode="regression" --drop=0.0
 """
 import os
 import argparse
@@ -34,6 +34,7 @@ parser.add_argument("--ntask", default=1, type=int, help="number of tasks")
 parser.add_argument(
     "--mode", default="regression", type=str, help="regression or classification"
 )
+parser.add_argument("--dropout", default=0.5, type=float, help="dropout rate")
 args = parser.parse_args()
 
 workdir = cwd / args.name
@@ -44,13 +45,13 @@ l_hparam = {
     "mode": args.mode,
     "lr_scheduler_factor": 0.8,
     "lr_scheduler_patience": 20,
-    "lr_warmup_step": 1000,
+    "lr_warmup_step": 1000 if args.mode == "regression" else 100,
     "max_lr": 1e-4,
     "freeze": False,
 }
 
 model = ChemBFN.from_checkpoint(args.ckpt)
-mlp = MLP([512, 256, args.ntask])
+mlp = MLP([512, 256, args.ntask], dropout=args.dropout)
 regressor = Regressor(model, mlp, l_hparam)
 
 checkpoint_callback = ModelCheckpoint(dirpath=workdir, monitor="val_loss")
