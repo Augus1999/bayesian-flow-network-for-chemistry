@@ -473,7 +473,7 @@ class ChemBFN(nn.Module):
         :return: Bayesian Flow Network for Chemistry model
         """
         with open(ckpt, "rb") as f:
-            state = torch.load(f, "cpu")
+            state = torch.load(f, "cpu", weights_only=True)
         nn, hparam = state["nn"], state["hparam"]
         model = ChemBFN(
             hparam["num_vocab"],
@@ -534,7 +534,7 @@ class MLP(nn.Module):
         :return: MLP
         """
         with open(ckpt, "rb") as f:
-            state = torch.load(f, "cpu")
+            state = torch.load(f, "cpu", weights_only=True)
         nn, hparam = state["nn"], state["hparam"]
         model = MLP(hparam["size"], hparam["class_input"], hparam["dropout"])
         model.load_state_dict(nn, strict)

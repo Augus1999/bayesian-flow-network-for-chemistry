@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Author: Nianze A. TAO (Omozawa SUENO)
 """
-Tokenise SMILES strings.
+Tokenise SMILES/SAFE/SELFIES strings.
 """
 import os
 import re
