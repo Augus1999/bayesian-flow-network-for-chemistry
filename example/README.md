@@ -1,6 +1,6 @@
 ## This folder contains example scripts.
 
-* To run the example of MOSES dataset, you should first install `moses` package by following the instruction [here](https://github.com/molecularsets/moses/blob/master/README.md#manually), then excute the python script as:
+* To run the example of MOSES dataset, you should first install `molsets` package by following the instruction [here](https://github.com/molecularsets/moses/blob/master/README.md#manually), then excute the python script as:
 ```bash
 $ python run_moses.py --datadir={YOUR_MOSES_DATASET_FOLDER} --samplestep=100
 ```
