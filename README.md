@@ -3,6 +3,14 @@
 **Abstract**: In this work, we introduce ChemBFN, a language model that handles chemistry tasks based on
 Bayesian flow networks working on discrete data. A new accuracy schedule is proposed to improve the sampling quality by significantly reducing the reconstruction loss. We show evidence that our method is appropriate for generating molecules with satisfied diversity even when a smaller number of sampling steps is used. A classifier-free guidance method is adapted for conditional generation. It is also worthwhile to point out that after generative training, our model can be fine-tuned on regression and classification tasks with the state-of-the-art performance, which opens the gate of building all-in-one models in a single module style.
 
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/a-bayesian-flow-network-framework-for/molecular-property-prediction-on-bbbp-1)](https://paperswithcode.com/sota/molecular-property-prediction-on-bbbp-1?p=a-bayesian-flow-network-framework-for)
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/a-bayesian-flow-network-framework-for/molecular-property-prediction-on-clintox-1)](https://paperswithcode.com/sota/molecular-property-prediction-on-clintox-1?p=a-bayesian-flow-network-framework-for)
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/a-bayesian-flow-network-framework-for/molecular-property-prediction-on-freesolv)](https://paperswithcode.com/sota/molecular-property-prediction-on-freesolv?p=a-bayesian-flow-network-framework-for)
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/a-bayesian-flow-network-framework-for/molecular-property-prediction-on-hiv-dataset)](https://paperswithcode.com/sota/molecular-property-prediction-on-hiv-dataset?p=a-bayesian-flow-network-framework-for)
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/a-bayesian-flow-network-framework-for/molecular-property-prediction-on-esol)](https://paperswithcode.com/sota/molecular-property-prediction-on-esol?p=a-bayesian-flow-network-framework-for)
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/a-bayesian-flow-network-framework-for/molecular-property-prediction-on)](https://paperswithcode.com/sota/molecular-property-prediction-on?p=a-bayesian-flow-network-framework-for)
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/a-bayesian-flow-network-framework-for/molecular-property-prediction-on-bace-1)](https://paperswithcode.com/sota/molecular-property-prediction-on-bace-1?p=a-bayesian-flow-network-framework-for)
+
 ## News
 
 * [31/07/2024] Paper is available on [arxiv.org](https://arxiv.org/abs/2407.20294).
