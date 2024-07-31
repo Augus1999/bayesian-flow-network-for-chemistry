@@ -1,10 +1,11 @@
 # ChemBFN: Bayesian Flow Network for Chemistry
 
 **Abstract**: In this work, we introduce ChemBFN, a language model that handles chemistry tasks based on
-Bayesian flow networks working on discrete data. A new accuracy schedule is proposed to improve the sampling quality by significantly reducing the reconstruction loss. We show evidence that our method is appropriate for generating molecules with satisfied diversity even when a smaller number of sampling steps is used. A classifier-free guidance method is adapted to conditional generation. It is also worthwhile to point out that after generative training, our model can be fine-tuned on regression and classification tasks with the state-of-the-art performance, which opens the gate of building all-in-one models in a single module style.
+Bayesian flow networks working on discrete data. A new accuracy schedule is proposed to improve the sampling quality by significantly reducing the reconstruction loss. We show evidence that our method is appropriate for generating molecules with satisfied diversity even when a smaller number of sampling steps is used. A classifier-free guidance method is adapted for conditional generation. It is also worthwhile to point out that after generative training, our model can be fine-tuned on regression and classification tasks with the state-of-the-art performance, which opens the gate of building all-in-one models in a single module style.
 
 ## News
 
+* [31/07/2024] Paper is available on [arxiv.org](https://arxiv.org/abs/2407.20294).
 * [21/07/2024] Paper was submitted to arXiv.
 
 ## Usage
@@ -25,8 +26,12 @@ We provide a Python class [`CSVData`](./bayesianflow_for_chem/data.py) to handle
 
 ```bibtex
 @misc{2024chembfn,
-      title={Bayesian-Flow-Network-for-Chemistry Github repository}, 
+      title={A Bayesian Flow Network Framework for Chemistry Tasks}, 
       author={Nianze Tao and Minori Abe},
       year={2024},
+      eprint={2407.20294},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2407.20294}, 
 }
 ```
