@@ -78,4 +78,9 @@ if __name__ == "__main__":
     trainer.fit(regressor, traindata, valdata)
     regressor.export_model(workdir)
     result = test(model, regressor.mlp, testdata, l_hparam["mode"])
-    print(result)
+    print("last:", result)
+    regressor = Regressor.load_from_checkpoint(
+        trainer.checkpoint_callback.best_model_path, model=model, mlp=mlp
+    )
+    result = test(regressor.model, regressor.mlp, testdata, l_hparam["mode"])
+    print("best:", result)

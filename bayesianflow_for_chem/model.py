@@ -431,12 +431,17 @@ class ChemBFN(nn.Module):
         :param guidance_strength: strength of conditional generation. It is not used if y is null.
         :return: probability distribution;          shape: (n_b, n_t, n_vocab)
         """
+        n_b, n_t = x.shape
         mask = (x != 0).float()[..., None]
-        theta = torch.ones((x.shape[0], x.shape[1], self.K), device=x.device) / self.K
+        theta = torch.ones((n_b, n_t, self.K), device=x.device) / self.K
         x_onehot = nn.functional.one_hot(x, self.K) * mask
         theta = x_onehot + (1 - mask) * theta
+        if y is not None:
+            assert y.dim() == 3  # this doesn't work if the model is frezen in JIT.
+            if y.shape[0] == 1:
+                y = y.repeat(n_b, 1, 1)
         for i in torch.linspace(1, sample_step, sample_step, device=x.device):
-            t = (i - 1).view(1, 1).repeat(x.shape[0], 1) / sample_step
+            t = (i - 1).view(1, 1).repeat(n_b, 1) / sample_step
             p = self.discrete_output_distribution(theta, t, y, guidance_strength)
             alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)[..., None]
             e_k = nn.functional.one_hot(torch.argmax(p, -1), self.K).float()
@@ -445,7 +450,7 @@ class ChemBFN(nn.Module):
             theta = (mu + sigma * torch.randn_like(mu)).exp() * theta
             theta = theta / theta.sum(-1, True)
             theta = x_onehot + (1 - mask) * theta
-        t_final = torch.ones((x.shape[0], 1), device=x.device)
+        t_final = torch.ones((n_b, 1), device=x.device)
         p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
         return torch.argmax(p, -1)
 

@@ -198,7 +198,7 @@ def inpaint(
     vocab_keys: List[str] = VOCAB_KEYS,
 ) -> List[str]:
     """
-    Sampling.
+    Inpaint (context guided) sampling.
 
     :param model: trained ChemBFN model
     :param x: categorical indices of scaffold;  shape: (n_b, n_t)
