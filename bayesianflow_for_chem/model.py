@@ -243,13 +243,13 @@ class ChemBFN(nn.Module):
     ) -> Tensor:
         """
         :param x: input probabilities;                       shape: (n_b, n_t, n_vocab)
-        :param t: time;                                      shape: (n_b, 1)
+        :param t: time;                                      shape: (n_b, 1, 1)
         :param mask: input mask;                             shape: (n_b, n_t, 1)
         :param y: conditioning vector;                       shape: (n_b, 1, n_f)
         :return: probability distribution (before softmax);  shape: (n_b, n_t, n_vocab)
                  or token embeddings;                        shape: (n_b, n_t, n_f)
         """
-        c = self.time_embed(t)[:, None, :]
+        c = self.time_embed(t)
         if y is not None:
             c += y
         pe = self.position(x.shape[1])
@@ -274,8 +274,8 @@ class ChemBFN(nn.Module):
             -\frac{4\ln{(1 - t + te^{-\frac{K}{4}\beta(1)})}}{K}
         \end{equation}
 
-        :param t: continuous time in [0, 1];   shape: (n_b, 1)
-        :return beta(t);                       shape: (n_b, 1)
+        :param t: continuous time in [0, 1];  shape: (n_b, 1, 1)
+        :return beta(t);                      shape: (n_b, 1, 1)
         """
         return -4 * (1 - t + t * (-self.K * self.beta / 4).exp()).log() / self.K
 
@@ -285,9 +285,9 @@ class ChemBFN(nn.Module):
 
         $\alpha(i) = \bate(t_{i}) - \beta(t_{i - 1})$
 
-        :param t1: discrete time (i - 1) / n;  shape: (n_b, 1)
-        :param t2: discrete time i / n;        shape: (n_b, 1)
-        :return alpha(i);                      shape: (n_b, 1)
+        :param t1: discrete time (i - 1) / n;  shape: (n_b, 1, 1)
+        :param t2: discrete time i / n;        shape: (n_b, 1, 1)
+        :return alpha(i);                      shape: (n_b, 1, 1)
         """
         # assert t2 > t1
         return self.calc_beta(t2) - self.calc_beta(t1)
@@ -304,8 +304,8 @@ class ChemBFN(nn.Module):
             {1 - t + te^{-\frac{K}{4}\beta(1)}}
         \end{equation}
 
-        :param t: continuous time in [0, 1];  shape: (n_b, 1)
-        :return alpha(t);                     shape: (n_b, 1)
+        :param t: continuous time in [0, 1];  shape: (n_b, 1, 1)
+        :return alpha(t);                     shape: (n_b, 1, 1)
         """
         a = 1 - (-self.K * self.beta / 4).exp()
         b = 1 - t + t * (-self.K * self.beta / 4).exp()
@@ -316,7 +316,7 @@ class ChemBFN(nn.Module):
     ) -> Tensor:
         """
         :param theta: input distribution;     shape: (n_b, n_t, n_vocab)
-        :param t: continuous time in [0, 1];  shape: (n_b, 1)
+        :param t: continuous time in [0, 1];  shape: (n_b, 1, 1)
         :param y: conditioning vector;        shape: (n_b, 1, n_f)
         :param w: guidance strength controlling the conditional generation
         :return: output distribution;         shape: (n_b, n_t, n_vocab)
@@ -343,7 +343,8 @@ class ChemBFN(nn.Module):
         :param mask: in-text mask;            shape: (n_b, n_t)
         :return: continuous-time loss;        shape: ()
         """
-        beta = self.calc_beta(t)[..., None]  # shape: (n_b, 1, 1)
+        t = t[..., None]
+        beta = self.calc_beta(t)  # shape: (n_b, 1, 1)
         e_x = nn.functional.one_hot(x, self.K).float()
         mu = beta * (self.K * e_x - 1)
         sigma = (beta * self.K).sqrt()
@@ -352,7 +353,7 @@ class ChemBFN(nn.Module):
             mask = mask[..., None]
             theta = e_x * mask + (1 - mask) * theta
         e_hat = self.discrete_output_distribution(theta, t, y, None)
-        cts_loss = self.K * (e_x - e_hat).pow(2) * self.calc_cts_alpha(t)[..., None]
+        cts_loss = self.K * (e_x - e_hat).pow(2) * self.calc_cts_alpha(t)
         return cts_loss.mean()
 
     @torch.inference_mode()
@@ -365,7 +366,8 @@ class ChemBFN(nn.Module):
         :param y: conditioning vector;        shape: (n_b, 1, n_f)
         :return: reconstruction loss;         shape: ()
         """
-        beta = self.calc_beta(t)[..., None]
+        t = t[..., None]
+        beta = self.calc_beta(t)
         mu = beta * (self.K * nn.functional.one_hot(x, self.K).float() - 1)
         sigma = (beta * self.K).sqrt()
         theta = softmax(mu + sigma * torch.randn_like(mu), -1)
@@ -402,15 +404,15 @@ class ChemBFN(nn.Module):
             if y.shape[0] == 1:
                 y = y.repeat(batch_size, 1, 1)
         for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
-            t = (i - 1).view(1, 1).repeat(batch_size, 1) / sample_step
+            t = (i - 1).view(1, 1, 1).repeat(batch_size, 1, 1) / sample_step
             p = self.discrete_output_distribution(theta, t, y, guidance_strength)
-            alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)[..., None]
+            alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)
             e_k = nn.functional.one_hot(torch.argmax(p, -1), self.K).float()
             mu = alpha * (self.K * e_k - 1)
             sigma = (alpha * self.K).sqrt()
             theta = (mu + sigma * torch.randn_like(mu)).exp() * theta
             theta = theta / theta.sum(-1, True)
-        t_final = torch.ones((batch_size, 1), device=self.beta.device)
+        t_final = torch.ones((batch_size, 1, 1), device=self.beta.device)
         p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
         return torch.argmax(p, -1)
 
@@ -441,16 +443,16 @@ class ChemBFN(nn.Module):
             if y.shape[0] == 1:
                 y = y.repeat(n_b, 1, 1)
         for i in torch.linspace(1, sample_step, sample_step, device=x.device):
-            t = (i - 1).view(1, 1).repeat(n_b, 1) / sample_step
+            t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
             p = self.discrete_output_distribution(theta, t, y, guidance_strength)
-            alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)[..., None]
+            alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)
             e_k = nn.functional.one_hot(torch.argmax(p, -1), self.K).float()
             mu = alpha * (self.K * e_k - 1)
             sigma = (alpha * self.K).sqrt()
             theta = (mu + sigma * torch.randn_like(mu)).exp() * theta
             theta = theta / theta.sum(-1, True)
             theta = x_onehot + (1 - mask) * theta
-        t_final = torch.ones((n_b, 1), device=x.device)
+        t_final = torch.ones((n_b, 1, 1), device=x.device)
         p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
         return torch.argmax(p, -1)
 
@@ -462,7 +464,7 @@ class ChemBFN(nn.Module):
         :param mlp: MLP module
         :return: output values;  shape: (n_b, n_task)
         """
-        t = torch.ones((x.shape[0], 1), device=x.device)
+        t = torch.ones((x.shape[0], 1, 1), device=x.device)
         mask = (x != 0).float()[..., None]
         theta = 2 * torch.nn.functional.one_hot(x, self.K).float() - 1
         z = self.forward(theta, t, mask, None)
