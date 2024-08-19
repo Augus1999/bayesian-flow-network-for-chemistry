@@ -275,7 +275,7 @@ class ChemBFN(nn.Module):
         \end{equation}
 
         :param t: continuous time in [0, 1];  shape: (n_b, 1, 1)
-        :return beta(t);                      shape: (n_b, 1, 1)
+        :return: beta(t);                     shape: (n_b, 1, 1)
         """
         return -4 * (1 - t + t * (-self.K * self.beta / 4).exp()).log() / self.K
 
@@ -287,7 +287,7 @@ class ChemBFN(nn.Module):
 
         :param t1: discrete time (i - 1) / n;  shape: (n_b, 1, 1)
         :param t2: discrete time i / n;        shape: (n_b, 1, 1)
-        :return alpha(i);                      shape: (n_b, 1, 1)
+        :return: alpha(i);                     shape: (n_b, 1, 1)
         """
         # assert t2 > t1
         return self.calc_beta(t2) - self.calc_beta(t1)
@@ -305,7 +305,7 @@ class ChemBFN(nn.Module):
         \end{equation}
 
         :param t: continuous time in [0, 1];  shape: (n_b, 1, 1)
-        :return alpha(t);                     shape: (n_b, 1, 1)
+        :return: alpha(t);                    shape: (n_b, 1, 1)
         """
         a = 1 - (-self.K * self.beta / 4).exp()
         b = 1 - t + t * (-self.K * self.beta / 4).exp()
@@ -456,6 +456,7 @@ class ChemBFN(nn.Module):
         p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
         return torch.argmax(p, -1)
 
+    @torch.jit.export
     def inference(self, x: Tensor, mlp: nn.Module) -> Tensor:
         """
         Predict from SMILES tokens.
@@ -499,15 +500,16 @@ class MLP(nn.Module):
     ) -> None:
         """
         MLP module.
-
-        :param size: hidden feature sizes
-        :param class_input: whether the input is class indices
-        :param dropout: dropout frequency\n
         e.g.
-        ```python
+
+        ```
         mlp = MLP(size=[512, 256, 1])
         mlp = MLP(size=[10, 256, 512], True)  # embedding 10 classes
         ```
+
+        :param size: hidden feature sizes
+        :param class_input: whether the input is class indices
+        :param dropout: dropout frequency
         """
         super().__init__()
         assert len(size) >= 2
