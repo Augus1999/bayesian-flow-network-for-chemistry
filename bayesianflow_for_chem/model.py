@@ -456,7 +456,6 @@ class ChemBFN(nn.Module):
         p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
         return torch.argmax(p, -1)
 
-    @torch.jit.export
     def inference(self, x: Tensor, mlp: nn.Module) -> Tensor:
         """
         Predict from SMILES tokens.

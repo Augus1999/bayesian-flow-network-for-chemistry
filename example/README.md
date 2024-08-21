@@ -23,6 +23,7 @@ from bayesianflow_for_chem.tool import sample, inpaint
 
 model = ChemBFN.from_checkpoint("YOUR_MODEL.pt").eval().to("cuda")
 model = torch.jit.freeze(torch.jit.script(model), ["sample", "inpaint"])
+# or model.compile()
 # ------- generate molecules -------
 smiles = sample(model, 1, 60, 100)
 # ------- inpaint (sacffold extension) -------
