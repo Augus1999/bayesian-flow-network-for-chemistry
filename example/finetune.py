@@ -30,6 +30,7 @@ parser.add_argument(
 )
 parser.add_argument("--name", default="esol", type=str, help="dataset name")
 parser.add_argument("--nepoch", default=100, type=int, help="number of epochs")
+# in most cases, --ntask=2 when --mode=classification and --ntask=1 when --mode=regression
 parser.add_argument("--ntask", default=1, type=int, help="number of tasks")
 parser.add_argument(
     "--mode", default="regression", type=str, help="regression or classification"

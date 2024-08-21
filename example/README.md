@@ -12,6 +12,19 @@ $ python run_guacamol.py --datadir={YOUR_GUACAMOL_DATASET_FOLDER} --samplestep=1
 
 You can switch to the SELFIES version by using flag `--version=selfies`, but the package `selfies` is required.
 
+* To finetune a model, you need to prepare the dataset in the same format as below:
+```csv
+smiles,value
+CC(=O)C3(C)CCC4C2C=C(C)C1=CC(=O)CCC1(C)C2CCC34C,-5.27
+CC(=O)OC3(CCC4C2C=C(C)C1=CC(=O)CCC1(C)C2CCC34C)C(C)=O,-5.35
+CN(C(=O)COc1nc2ccccc2s1)c3ccccc3,-4.873
+O=C(Nc1ccccc1)Nc2ccccc2,-3.15
+Clc1ccc(CN(C2CCCC2)C(=O)Nc3ccccc3)cc1,-5.915
+CC2(C)C1CCC(C)(C1)C2=O,-1.85
+CC1(C)C2CCC1(C)C(=O)C2,-1.96
+
+```
+
 ## JIT version?
 
 Our implementation supports TorchScript.
