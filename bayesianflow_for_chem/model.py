@@ -512,6 +512,7 @@ class MLP(nn.Module):
         """
         super().__init__()
         assert len(size) >= 2
+        self.class_input = class_input
         self.dropout = nn.Dropout(dropout if not class_input else 0.0)
         self.layers = nn.ModuleList(
             [nn.Linear(i, size[key + 1]) for key, i in enumerate(size[:-2])]
@@ -528,6 +529,8 @@ class MLP(nn.Module):
                                         (n_b, 1, n_output) if class_input
         """
         x = self.dropout(x)
+        if self.class_input:
+            x = x.to(dtype=torch.long)
         for layer in self.layers[:-1]:
             x = torch.selu(layer(x))
         return self.layers[-1](x)
