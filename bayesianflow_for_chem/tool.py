@@ -16,7 +16,7 @@ from sklearn.metrics import (
     precision_recall_curve,
     r2_score,
     mean_absolute_error,
-    mean_squared_error,
+    root_mean_squared_error,
 )
 from .data import VOCAB_KEYS
 from .model import ChemBFN, MLP
@@ -73,7 +73,7 @@ def test(
         y_zipped = list(zip(label_y, predict_y))
         mae = [mean_absolute_error(label, predict) for (label, predict) in y_zipped]
         rmse = [
-            mean_squared_error(label, predict) ** 0.5 for (label, predict) in y_zipped
+            root_mean_squared_error(label, predict) for (label, predict) in y_zipped
         ]
         r2 = [r2_score(label, predict) for (label, predict) in y_zipped]
         return {"MAE": mae, "RMSE": rmse, "R^2": r2}
