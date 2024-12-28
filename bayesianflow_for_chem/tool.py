@@ -309,6 +309,7 @@ def sample(
     device: Union[str, torch.device, None] = None,
     vocab_keys: List[str] = VOCAB_KEYS,
     seperator: str = "",
+    allowed_tokens: Union[str, List[str]] = "all",
 ) -> List[str]:
     """
     Sampling.
@@ -322,6 +323,7 @@ def sample(
     :param device: hardware accelerator
     :param vocab_keys: a list of (ordered) vocabulary
     :param separator: token separator; default is ""
+    :param allowed_tokens: a list of allowed tokens; default is "all"
     :return: a list of generated molecular strings
     """
     if device is None:
@@ -329,7 +331,14 @@ def sample(
     model.to(device).eval()
     if y is not None:
         y = y.to(device)
-    tokens = model.sample(batch_size, sequence_size, y, sample_step, guidance_strength)
+    if isinstance(allowed_tokens, list):
+        token_mask = [0 if i in allowed_tokens else 1 for i in vocab_keys]
+        token_mask = torch.tensor([[token_mask]], dtype=torch.bool).to(device)
+    else:
+        token_mask = None
+    tokens = model.sample(
+        batch_size, sequence_size, y, sample_step, guidance_strength, token_mask
+    )
     return [
         seperator.join([vocab_keys[i] for i in j])
         .split("<start>" + seperator)[-1]
@@ -349,6 +358,7 @@ def inpaint(
     device: Union[str, torch.device, None] = None,
     vocab_keys: List[str] = VOCAB_KEYS,
     separator: str = "",
+    allowed_tokens: Union[str, List[str]] = "all",
 ) -> List[str]:
     """
     Inpaint (context guided) sampling.
@@ -361,6 +371,7 @@ def inpaint(
     :param device: hardware accelerator
     :param vocab_keys: a list of (ordered) vocabulary
     :param separator: token separator; default is ""
+    :param allowed_tokens: a list of allowed tokens; default is "all"
     :return: a list of generated molecular strings
     """
     if device is None:
@@ -368,7 +379,12 @@ def inpaint(
     model.to(device).eval()
     if y is not None:
         y = y.to(device)
-    tokens = model.inpaint(x.to(device), y, sample_step, guidance_strength)
+    if isinstance(allowed_tokens, list):
+        token_mask = [0 if i in allowed_tokens else 1 for i in vocab_keys]
+        token_mask = torch.tensor([[token_mask]], dtype=torch.bool).to(device)
+    else:
+        token_mask = None
+    tokens = model.inpaint(x.to(device), y, sample_step, guidance_strength, token_mask)
     return [
         separator.join([vocab_keys[i] for i in j])
         .split("<start>" + separator)[-1]

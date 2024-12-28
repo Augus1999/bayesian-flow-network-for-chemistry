@@ -459,12 +459,11 @@ class ChemBFN(nn.Module):
         Compute continuous-time loss.
 
         :param x: target data;                shape: (n_b, n_t)
-        :param t: continuous time in [0, 1);  shape: (n_b, 1)
+        :param t: continuous time in [0, 1);  shape: (n_b, 1, 1)
         :param y: conditioning vector;        shape: (n_b, 1, n_f)
         :param mask: in-text mask;            shape: (n_b, n_t)
         :return: continuous-time loss;        shape: ()
         """
-        t = t[..., None]
         beta = self.calc_beta(t)  # shape: (n_b, 1, 1)
         e_x = nn.functional.one_hot(x, self.K).float()
         mu = beta * (self.K * e_x - 1)
@@ -483,11 +482,10 @@ class ChemBFN(nn.Module):
         Compute reconstruction loss.
 
         :param x: target data;                shape: (n_b, n_t)
-        :param t: continuous time in [0, 1];  shape: (n_b, 1)
+        :param t: continuous time in [0, 1];  shape: (n_b, 1, 1)
         :param y: conditioning vector;        shape: (n_b, 1, n_f)
         :return: reconstruction loss;         shape: ()
         """
-        t = t[..., None]
         beta = self.calc_beta(t)
         mu = beta * (self.K * nn.functional.one_hot(x, self.K).float() - 1)
         sigma = (beta * self.K).sqrt()
@@ -505,6 +503,7 @@ class ChemBFN(nn.Module):
         y: Optional[Tensor],
         sample_step: int = 100,
         guidance_strength: float = 4.0,
+        token_mask: Optional[Tensor] = None,
     ) -> Tensor:
         """
         Sample from a piror distribution.
@@ -514,6 +513,7 @@ class ChemBFN(nn.Module):
         :param y: conditioning vector;      shape: (n_b, 1, n_f)
         :param sample_step: number of sampling steps
         :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param token_mask: token mask;      shape: (1, 1, n_vocab)
         :return: probability distribution;  shape: (n_b, n_t, n_vocab)
         """
         theta = (
@@ -527,6 +527,8 @@ class ChemBFN(nn.Module):
         for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
             t = (i - 1).view(1, 1, 1).repeat(batch_size, 1, 1) / sample_step
             p = self.discrete_output_distribution(theta, t, y, guidance_strength)
+            if token_mask is not None:
+                p = p.masked_fill_(token_mask, 0.0)
             alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)
             e_k = nn.functional.one_hot(torch.argmax(p, -1), self.K).float()
             mu = alpha * (self.K * e_k - 1)
@@ -535,6 +537,8 @@ class ChemBFN(nn.Module):
             theta = theta / theta.sum(-1, True)
         t_final = torch.ones((batch_size, 1, 1), device=self.beta.device)
         p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
+        if token_mask is not None:
+            p = p.masked_fill_(token_mask, 0.0)
         return torch.argmax(p, -1)
 
     @torch.jit.export
@@ -544,6 +548,7 @@ class ChemBFN(nn.Module):
         y: Optional[Tensor] = None,
         sample_step: int = 100,
         guidance_strength: float = 4.0,
+        token_mask: Optional[Tensor] = None,
     ) -> Tensor:
         """
         Molecule inpaint functionality.
@@ -552,6 +557,7 @@ class ChemBFN(nn.Module):
         :param y: conditioning vector;              shape: (n_b, 1, n_f)
         :param sample_step: number of sampling steps
         :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param token_mask: token mask;              shape: (1, 1, n_vocab)
         :return: probability distribution;          shape: (n_b, n_t, n_vocab)
         """
         n_b, n_t = x.shape
@@ -566,6 +572,8 @@ class ChemBFN(nn.Module):
         for i in torch.linspace(1, sample_step, sample_step, device=x.device):
             t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
             p = self.discrete_output_distribution(theta, t, y, guidance_strength)
+            if token_mask is not None:
+                p = p.masked_fill_(token_mask, 0.0)
             alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)
             e_k = nn.functional.one_hot(torch.argmax(p, -1), self.K).float()
             mu = alpha * (self.K * e_k - 1)
@@ -575,6 +583,8 @@ class ChemBFN(nn.Module):
             theta = x_onehot + (1 - mask) * theta
         t_final = torch.ones((n_b, 1, 1), device=x.device)
         p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
+        if token_mask is not None:
+            p = p.masked_fill_(token_mask, 0.0)
         return torch.argmax(p, -1)
 
     def inference(self, x: Tensor, mlp: nn.Module) -> Tensor:

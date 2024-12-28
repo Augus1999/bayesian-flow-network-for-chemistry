@@ -50,7 +50,7 @@ class Model(LightningModule):
 
     def training_step(self, batch: Dict[str, Tensor]) -> Tensor:
         x = batch["token"]
-        t = torch.rand((x.shape[0], 1), device=x.device)
+        t = torch.rand((x.shape[0], 1, 1), device=x.device)
         if "mask" in batch:
             mask = batch["mask"]
         else:
@@ -61,7 +61,7 @@ class Model(LightningModule):
             if y.dim() == 2:
                 y = y[:, None, :]
             y_mask = F.dropout(torch.ones_like(t), self.hparams.uncond_prob, True, True)
-            y_mask = (y_mask != 0).float()[..., None]
+            y_mask = (y_mask != 0).float()
             loss = self.model.cts_loss(x, t, y * y_mask, mask)
         else:
             loss = self.model.cts_loss(x, t, None, mask)
