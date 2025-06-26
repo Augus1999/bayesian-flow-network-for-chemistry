@@ -28,7 +28,8 @@ setup(
     description="Bayesian flow network framework for Chemistry",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    license="AGPL-3.0 licence",
+    license="AGPL-3.0-or-later",
+    license_files=["LICEN[CS]E*"],
     package_dir={"bayesianflow_for_chem": "bayesianflow_for_chem"},
     package_data={"bayesianflow_for_chem": ["./*.txt", "./*.py"]},
     include_package_data=True,
@@ -52,7 +53,6 @@ setup(
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Science/Research",
-        "License :: OSI Approved :: GNU Affero General Public License v3",
         "Natural Language :: English",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.9",
