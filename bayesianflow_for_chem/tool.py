@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 # Author: Nianze A. TAO (Omozawa SUENO)
 """
-Tools.
+Essential tools.
 """
 import re
 import csv
 import random
+import warnings
 from copy import deepcopy
 from pathlib import Path
 from typing import List, Dict, Tuple, Union, Optional
@@ -16,7 +17,8 @@ from torch import cuda, Tensor, softmax
 from torch.ao import quantization
 from torch.utils.data import DataLoader
 from typing_extensions import Self
-from rdkit.Chem import rdDetermineBonds, Bond, MolFromXYZBlock, CanonicalRankAtoms
+from rdkit.Chem.rdchem import Mol, Bond
+from rdkit.Chem import rdDetermineBonds, MolFromXYZBlock, MolToSmiles, CanonSmiles
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles  # type: ignore
 from sklearn.metrics import (
     roc_auc_score,
@@ -32,12 +34,11 @@ try:
 
     _use_pynauty = True
 except ImportError:
-    import warnings
+    import platform
 
     _use_pynauty = False
-
 from .data import VOCAB_KEYS
-from .model import ChemBFN, MLP, Linear
+from .model import ChemBFN, MLP, Linear, EnsembleChemBFN
 
 
 _atom_regex_pattern = (
@@ -225,137 +226,13 @@ def split_dataset(
         writer.writerows([header] + val_set)
 
 
-def geo2seq(
-    symbols: List[str],
-    coordinates: np.ndarray,
-    decimals: int = 2,
-    angle_unit: str = "degree",
-) -> str:
-    """
-    Geometry-to-sequence function.\n
-    The algorithm follows the descriptions in paper: https://arxiv.org/abs/2408.10120.
-
-    :param symbols: a list of atomic symbols
-    :param coordinates: Cartesian coordinates;  shape: (n_a, 3)
-    :param decimals: number of decimal places to round to
-    :param angle_unit: `'degree'` or `'radian'`
-    :type symbols: list
-    :type coordinates: numpy.ndarray
-    :type decimals: int
-    :type angle_unit: str
-    :return: `Geo2Seq` string
-    :rtype: str
-    """
-    assert angle_unit in ("degree", "radian")
-    angle_scale = 180 / np.pi if angle_unit == "degree" else 1.0
-    n = len(symbols)
-    if n == 1:
-        return f"{symbols[0]} {'0.0'} {'0.0'} {'0.0'}"
-    xyz_block = [str(n), ""]
-    for i, atom in enumerate(symbols):
-        xyz_block.append(
-            f"{atom} {'%.10f' % coordinates[i][0].item()} {'%.10f' % coordinates[i][1].item()} {'%.10f' % coordinates[i][2].item()}"
-        )
-    mol = MolFromXYZBlock("\n".join(xyz_block))
-    rdDetermineBonds.DetermineConnectivity(mol)
-    # ------- Canonicalization -------
-    if _use_pynauty:
-        pair_idx = np.array(_bond_pair_idx(mol.GetBonds())).T.tolist()
-        pair_dict: Dict[int, List[int]] = {}
-        for key, i in enumerate(pair_idx[0]):
-            if i not in pair_dict:
-                pair_dict[i] = [pair_idx[1][key]]
-            else:
-                pair_dict[i].append(pair_idx[1][key])
-        g = Graph(n, adjacency_dict=pair_dict)
-        cl = canon_label(g)  # type: list
-    else:
-        warnings.warn(
-            "\033[32;1m"
-            "`pynauty` is not installed."
-            " Switched to canonicalization function provided by `rdkit`."
-            " This is the expected behaviour only if you are working on Windows platform."
-            "\033[0m",
-            stacklevel=2,
-        )
-        cl = list(CanonicalRankAtoms(mol, breakTies=True))
-    symbols = np.array([[s] for s in symbols])[cl].flatten().tolist()
-    coordinates = coordinates[cl]
-    # ------- Find global coordinate frame -------
-    if n == 2:
-        d = np.round(np.linalg.norm(coordinates[0] - coordinates[1], 2), decimals)
-        return f"{symbols[0]} {'0.0'} {'0.0'} {'0.0'} {symbols[1]} {d} {'0.0'} {'0.0'}"
-    for idx_0 in range(n - 2):
-        _vec0 = coordinates[idx_0] - coordinates[idx_0 + 1]
-        _vec1 = coordinates[idx_0] - coordinates[idx_0 + 2]
-        _d1 = np.linalg.norm(_vec0, 2)
-        _d2 = np.linalg.norm(_vec1, 2)
-        if 1 - np.abs(np.dot(_vec0, _vec1) / (_d1 * _d2)) > 1e-6:
-            break
-    x = (coordinates[idx_0 + 1] - coordinates[idx_0]) / _d1
-    y = np.cross((coordinates[idx_0 + 2] - coordinates[idx_0]), x)
-    y_d = np.linalg.norm(y, 2)
-    y = y / np.ma.filled(np.ma.array(y_d, mask=y_d == 0), np.inf)
-    z = np.cross(x, y)
-    # ------- Build spherical coordinates -------
-    vec = coordinates - coordinates[idx_0]
-    d = np.linalg.norm(vec, 2, axis=-1)
-    _d = np.ma.filled(np.ma.array(d, mask=d == 0), np.inf)
-    theta = angle_scale * np.arccos(np.dot(vec, z) / _d)  # in [0, \pi]
-    phi = angle_scale * np.arctan2(np.dot(vec, y), np.dot(vec, x))  # in [-\pi, \pi]
-    info = np.vstack([d, theta, phi]).T
-    info[idx_0] = np.zeros(3)
-    info = [
-        f"{symbols[i]} {r[0]} {r[1]} {r[2]}"
-        for i, r in enumerate(np.round(info, decimals))
-    ]
-    return " ".join(info)
-
-
-def seq2geo(
-    seq: str, angle_unit: str = "degree"
-) -> Optional[Tuple[List[str], List[List[float]]]]:
-    """
-    Sequence-to-geometry function.\n
-    The method follows the descriptions in paper: https://arxiv.org/abs/2408.10120.
-
-    :param seq: `Geo2Seq` string
-    :param angle_unit: `'degree'` or `'radian'`
-    :type seq: str
-    :type angle_unit: str
-    :return: (symbols, coordinates) if `seq` is valid
-    :rtype: tuple | None
-    """
-    assert angle_unit in ("degree", "radian")
-    angle_scale = np.pi / 180 if angle_unit == "degree" else 1.0
-    tokens = seq.split()
-    if len(tokens) % 4 == 0:
-        tokens = np.array(tokens).reshape(-1, 4).tolist()
-        symbols, coordinates = [], []
-        for i in tokens:
-            symbol = i[0]
-            if len(_atom_regex.findall(symbol)) != 1:
-                return None
-            symbols.append(symbol)
-            try:
-                d, theta, phi = float(i[1]), float(i[2]), float(i[3])
-                x = d * np.sin(theta * angle_scale) * np.cos(phi * angle_scale)
-                y = d * np.sin(theta * angle_scale) * np.sin(phi * angle_scale)
-                z = d * np.cos(theta * angle_scale)
-                coordinates.append([x.item(), y.item(), z.item()])
-            except ValueError:
-                return None
-        return symbols, coordinates
-    return None
-
-
 @torch.no_grad()
 def sample(
-    model: ChemBFN,
+    model: Union[ChemBFN, EnsembleChemBFN],
     batch_size: int,
     sequence_size: int,
     sample_step: int = 100,
-    y: Optional[Tensor] = None,
+    y: Optional[Union[Tensor, Dict[str, Tensor], List[Tensor]]] = None,
     guidance_strength: float = 4.0,
     device: Union[str, torch.device, None] = None,
     vocab_keys: List[str] = VOCAB_KEYS,
@@ -371,7 +248,9 @@ def sample(
     :param batch_size: batch size
     :param sequence_size: max sequence length
     :param sample_step: number of sampling steps
-    :param y: conditioning vector;  shape: (n_b, 1, n_f)
+    :param y: conditioning vector;             shape: (n_b, 1, n_f) or (n_b, n_f) \n
+              or a list/`dict` of conditions;  shape: (n_b, n_c) * n_h
+
     :param guidance_strength: strength of conditional generation. It is not used if y is null.
     :param device: hardware accelerator
     :param vocab_keys: a list of (ordered) vocabulary
@@ -379,11 +258,11 @@ def sample(
     :param method: sampling method chosen from `"ODE:x"` or `"BFN"` where `x` is the value of sampling temperature; default is `"BFN"`
     :param allowed_tokens: a list of allowed tokens; default is `"all"`
     :param sort: whether to sort the samples according to entropy values; default is `False`
-    :type model: bayesianflow_for_chem.model.ChemBFN
+    :type model: bayesianflow_for_chem.model.ChemBFN | bayesianflow_for_chem.model.EnsembleChemBFN
     :type batch_size: int
     :type sequence_size: int
     :type sample_step: int
-    :type y: torch.Tensor | None
+    :type y: torch.Tensor | list | dict | None
     :type guidance_strength: float
     :type device: str | torch.device | None
     :type vocab_keys: list
@@ -395,11 +274,23 @@ def sample(
     :rtype: list
     """
     assert method.split(":")[0].lower() in ("ode", "bfn")
+    if isinstance(model, EnsembleChemBFN):
+        assert y is not None, "conditioning is required while using an ensemble model."
+        assert isinstance(y, list) or isinstance(y, dict)
+    else:
+        assert isinstance(y, Tensor) or y is None
     if device is None:
         device = _find_device()
     model.to(device).eval()
     if y is not None:
-        y = y.to(device)
+        if isinstance(y, Tensor):
+            y = y.to(device)
+        elif isinstance(y, list):
+            y = [i.to(device) for i in y]
+        elif isinstance(y, dict):
+            y = {k: v.to(device) for k, v in y.items()}
+        else:
+            raise NotImplementedError
     if isinstance(allowed_tokens, list):
         token_mask = [0 if i in allowed_tokens else 1 for i in vocab_keys]
         token_mask = torch.tensor([[token_mask]], dtype=torch.bool).to(device)
@@ -429,10 +320,10 @@ def sample(
 
 @torch.no_grad()
 def inpaint(
-    model: ChemBFN,
+    model: Union[ChemBFN, EnsembleChemBFN],
     x: Tensor,
     sample_step: int = 100,
-    y: Optional[Tensor] = None,
+    y: Optional[Union[Tensor, Dict[str, Tensor], List[Tensor]]] = None,
     guidance_strength: float = 4.0,
     device: Union[str, torch.device, None] = None,
     vocab_keys: List[str] = VOCAB_KEYS,
@@ -447,7 +338,9 @@ def inpaint(
     :param model: trained ChemBFN model
     :param x: categorical indices of scaffold;  shape: (n_b, n_t)
     :param sample_step: number of sampling steps
-    :param y: conditioning vector;              shape: (n_b, 1, n_f)
+    :param y: conditioning vector;              shape: (n_b, 1, n_f) or (n_b, n_f) \n
+              or a list/`dict` of conditions;   shape: (n_b, n_c) * n_h
+
     :param guidance_strength: strength of conditional generation. It is not used if y is null.
     :param device: hardware accelerator
     :param vocab_keys: a list of (ordered) vocabulary
@@ -455,10 +348,10 @@ def inpaint(
     :param method: sampling method chosen from `"ODE:x"` or `"BFN"` where `x` is the value of sampling temperature; default is `"BFN"`
     :param allowed_tokens: a list of allowed tokens; default is `"all"`
     :param sort: whether to sort the samples according to entropy values; default is `False`
-    :type model: bayesianflow_for_chem.model.ChemBFN
+    :type model: bayesianflow_for_chem.model.ChemBFN | bayesianflow_for_chem.model.EnsembleChemBFN
     :type x: torch.Tensor
     :type sample_step: int
-    :type y: torch.Tensor | None
+    :type y: torch.Tensor | list | dict | None
     :type guidance_strength: float
     :type device: str | torch.device | None
     :type vocab_keys: list
@@ -470,12 +363,24 @@ def inpaint(
     :rtype: list
     """
     assert method.split(":")[0].lower() in ("ode", "bfn")
+    if isinstance(model, EnsembleChemBFN):
+        assert y is not None, "conditioning is required while using an ensemble model."
+        assert isinstance(y, list) or isinstance(y, dict)
+    else:
+        assert isinstance(y, Tensor) or y is None
     if device is None:
         device = _find_device()
     model.to(device).eval()
     x = x.to(device)
     if y is not None:
-        y = y.to(device)
+        if isinstance(y, Tensor):
+            y = y.to(device)
+        elif isinstance(y, list):
+            y = [i.to(device) for i in y]
+        elif isinstance(y, dict):
+            y = {k: v.to(device) for k, v in y.items()}
+        else:
+            raise NotImplementedError
     if isinstance(allowed_tokens, list):
         token_mask = [0 if i in allowed_tokens else 1 for i in vocab_keys]
         token_mask = torch.tensor([[token_mask]], dtype=torch.bool).to(device)
@@ -640,3 +545,178 @@ def quantise_model(model: ChemBFN) -> nn.Module:
         model, {nn.Linear, Linear}, torch.qint8, mapping
     )
     return quantised_model
+
+
+class GeometryConverter:
+    """
+    Converting between different 2D/3D molecular representations.
+    """
+
+    @staticmethod
+    def _xyz2mol(symbols: List[str], coordinates: np.ndarray) -> Mol:
+        xyz_block = [str(len(symbols)), ""]
+        r = coordinates
+        for i, atom in enumerate(symbols):
+            xyz_block.append(f"{atom} {r[i][0]:.10f} {r[i][1]:.10f} {r[i][2]:.10f}")
+        return MolFromXYZBlock("\n".join(xyz_block))
+
+    def cartesian2smiles(
+        self,
+        symbols: List[str],
+        coordinates: np.ndarray,
+        charge: int = 0,
+        canonical: bool = True,
+    ) -> str:
+        """
+        Transform (guess out) molecular geometry to SMILES string.
+
+        :param symbols: a list of atomic symbols
+        :param coordinates: Cartesian coordinates;  shape: (n_a, 3)
+        :param charge: net charge
+        :param canonical: whether to canonicalise the SMILES
+        :type symbols: list
+        :type coordinates: numpy.ndarray
+        :type charge: int
+        :type canonical: bool
+        :return: SMILES string
+        :rtype: str
+        """
+        mol = self._xyz2mol(symbols, coordinates)
+        rdDetermineBonds.DetermineBonds(mol, charge=charge)
+        smiles = MolToSmiles(mol)
+        if canonical:
+            smiles = CanonSmiles(smiles)
+        return smiles
+
+    def canonicalise(
+        self, symbols: List[str], coordinates: np.ndarray
+    ) -> Tuple[List[str], np.ndarray]:
+        """
+        Canonicalising the 3D molecular graph.
+
+        :param symbols: a list of atomic symbols
+        :param coordinates: Cartesian coordinates;  shape: (n_a, 3)
+        :type symbols: list
+        :type coordinates: numpy.ndarray
+        :return: canonicalised symbols \n
+                 canonicalised coordinates;         shape: (n_a, 3)
+        :rtype: tuple
+        """
+        if not _use_pynauty:
+            if platform.system() == "Windows":
+                raise NotImplementedError(
+                    "This method is not implemented on Windows platform."
+                )
+            else:
+                raise ImportError("`pynauty` is not installed.")
+        n = len(symbols)
+        if n == 1:
+            return symbols, coordinates
+        mol = self._xyz2mol(symbols, coordinates)
+        rdDetermineBonds.DetermineConnectivity(mol)
+        # ------- Canonicalization -------
+        pair_idx = np.array(_bond_pair_idx(mol.GetBonds())).T.tolist()
+        pair_dict: Dict[int, List[int]] = {}
+        for key, i in enumerate(pair_idx[0]):
+            if i not in pair_dict:
+                pair_dict[i] = [pair_idx[1][key]]
+            else:
+                pair_dict[i].append(pair_idx[1][key])
+        g = Graph(n, adjacency_dict=pair_dict)
+        cl = canon_label(g)  # type: list
+        symbols = np.array([[s] for s in symbols])[cl].flatten().tolist()
+        coordinates = coordinates[cl]
+        return symbols, coordinates
+
+    @staticmethod
+    def cartesian2spherical(coordinates: np.ndarray) -> np.ndarray:
+        """
+        Transforming Cartesian coordinate to spherical form.\n
+        The method is adapted from the paper: https://arxiv.org/abs/2408.10120.
+
+        :param coordinates: Cartesian coordinates;  shape: (n_a, 3)
+        :type coordinates: numpy.ndarray
+        :return: spherical coordinates;             shape: (n_a, 3)
+        :rtype: numpy.ndarray
+        """
+        n = coordinates.shape[0]
+        if n == 1:
+            return np.array([[0.0, 0.0, 0.0]])
+        # ------- Find global coordinate frame -------
+        if n == 2:
+            d = np.linalg.norm(coordinates[0] - coordinates[1], 2)
+            return np.array([[0.0, 0.0, 0.0], [d, 0.0, 0.0]])
+        for idx_0 in range(n - 2):
+            _vec0 = coordinates[idx_0] - coordinates[idx_0 + 1]
+            _vec1 = coordinates[idx_0] - coordinates[idx_0 + 2]
+            _d1 = np.linalg.norm(_vec0, 2)
+            _d2 = np.linalg.norm(_vec1, 2)
+            if 1 - np.abs(np.dot(_vec0, _vec1) / (_d1 * _d2)) > 1e-6:
+                break
+        x = (coordinates[idx_0 + 1] - coordinates[idx_0]) / _d1
+        y = np.cross((coordinates[idx_0 + 2] - coordinates[idx_0]), x)
+        y_d = np.linalg.norm(y, 2)
+        y = y / np.ma.filled(np.ma.array(y_d, mask=y_d == 0), np.inf)
+        z = np.cross(x, y)
+        # ------- Build spherical coordinates -------
+        vec = coordinates - coordinates[idx_0]
+        d = np.linalg.norm(vec, 2, axis=-1)
+        _d = np.ma.filled(np.ma.array(d, mask=d == 0), np.inf)
+        theta = np.arccos(np.dot(vec, z) / _d)  # in [0, \pi]
+        phi = np.arctan2(np.dot(vec, y), np.dot(vec, x))  # in [-\pi, \pi]
+        info = np.vstack([d, theta, phi]).T
+        info[idx_0] = np.zeros_like(info[idx_0])
+        return info
+
+    def geo2seq(
+        self, symbols: List[str], coordinates: np.ndarray, decimals: int = 2
+    ) -> str:
+        """
+        Geometry-to-sequence function.\n
+        The algorithm follows the descriptions in paper: https://arxiv.org/abs/2408.10120.
+
+        :param symbols: a list of atomic symbols
+        :param coordinates: Cartesian coordinates;  shape: (n_a, 3)
+        :param decimals: the maxmium number of decimals to keep; default is 2
+        :type symbols: list
+        :type coordinates: numpy.ndarray
+        :type decimals: int
+        :return: `Geo2Seq` string
+        :rtype: str
+        """
+        symbols, coordinates = self.canonicalise(symbols, coordinates)
+        info = self.cartesian2spherical(coordinates)
+        info = [
+            f"{symbols[i]} {r[0]} {r[1]} {r[2]}"
+            for i, r in enumerate(np.round(info, decimals))
+        ]
+        return " ".join(info)
+
+    @staticmethod
+    def seq2geo(seq: str) -> Tuple[Optional[List[str]], Optional[np.ndarray]]:
+        """
+        Sequence-to-geometry function.\n
+        The method follows the descriptions in paper: https://arxiv.org/abs/2408.10120.
+
+        :param seq: `Geo2Seq` string
+        :type seq: str
+        :return: (symbols, coordinates) if `seq` is valid
+        :rtype: tuple
+        """
+        tokens = seq.split()
+        if len(tokens) % 4 != 0:
+            return None, None
+        tokens = np.array(tokens).reshape(-1, 4)
+        symbols, coordinates = tokens[::, 0], tokens[::, 1:]
+        if sum([len(_atom_regex.findall(sym)) for sym in symbols]) != len(symbols):
+            return None, None
+        try:
+            coord = [[float(i) for i in j] for j in coordinates]
+            coord = np.array(coord)
+        except ValueError:
+            return None, None
+        d, theta, phi = coord[::, 0, None], coord[::, 1, None], coord[::, 2, None]
+        x = d * np.sin(theta) * np.cos(phi)
+        y = d * np.sin(theta) * np.sin(phi)
+        z = d * np.cos(theta)
+        return symbols, np.concatenate([x, y, z], -1)

@@ -4,7 +4,8 @@
 Define Bayesian Flow Network for Chemistry (ChemBFN) model.
 """
 from pathlib import Path
-from typing import List, Tuple, Optional, Union
+from copy import deepcopy
+from typing import List, Tuple, Dict, Optional, Union, Callable
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -592,6 +593,13 @@ class ChemBFN(nn.Module):
         x, logits = torch.broadcast_tensors(x[..., None], logits)
         return (-logits.gather(-1, x[..., :1]).squeeze(-1)).mean()
 
+    @staticmethod
+    def reshape_y(y: Tensor) -> Tensor:
+        assert y.dim() <= 3  # this doesn't work if the model is frezen in JIT.
+        if y.dim() == 2:
+            return y[:, None, :]
+        return y
+
     @torch.jit.export
     def sample(
         self,
@@ -607,7 +615,7 @@ class ChemBFN(nn.Module):
 
         :param batch_size: batch size
         :param sequence_size: max sequence length
-        :param y: conditioning vector;      shape: (n_b, 1, n_f)
+        :param y: conditioning vector;      shape: (n_b, 1, n_f) or (n_b, n_f)
         :param sample_step: number of sampling steps
         :param guidance_strength: strength of conditional generation. It is not used if y is null.
         :param token_mask: token mask;      shape: (1, 1, n_vocab)
@@ -626,9 +634,7 @@ class ChemBFN(nn.Module):
             / self.K
         )
         if y is not None:
-            assert y.dim() == 3  # this doesn't work if the model is frezen in JIT.
-            if y.shape[0] == 1:
-                y = y.repeat(batch_size, 1, 1)
+            y = self.reshape_y(y)
         for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
             t = (i - 1).view(1, 1, 1).repeat(batch_size, 1, 1) / sample_step
             p = self.discrete_output_distribution(theta, t, y, guidance_strength)
@@ -663,7 +669,7 @@ class ChemBFN(nn.Module):
 
         :param batch_size: batch size
         :param sequence_size: max sequence length
-        :param y: conditioning vector;      shape: (n_b, 1, n_f)
+        :param y: conditioning vector;      shape: (n_b, 1, n_f) or (n_b, n_f)
         :param sample_step: number of sampling steps
         :param guidance_strength: strength of conditional generation. It is not used if y is null.
         :param token_mask: token mask;      shape: (1, 1, n_vocab)
@@ -681,9 +687,7 @@ class ChemBFN(nn.Module):
         """
         z = torch.zeros((batch_size, sequence_size, self.K), device=self.beta.device)
         if y is not None:
-            assert y.dim() == 3  # this doesn't work if the model is frezen in JIT.
-            if y.shape[0] == 1:
-                y = y.repeat(batch_size, 1, 1)
+            y = self.reshape_y(y)
         for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
             t = (i - 1).view(1, 1, 1).repeat(batch_size, 1, 1) / sample_step
             theta = torch.softmax(z, -1)
@@ -714,7 +718,7 @@ class ChemBFN(nn.Module):
         Molecule inpaint functionality.
 
         :param x: categorical indices of scaffold;  shape: (n_b, n_t)
-        :param y: conditioning vector;              shape: (n_b, 1, n_f)
+        :param y: conditioning vector;              shape: (n_b, 1, n_f) or (n_b, n_f)
         :param sample_step: number of sampling steps
         :param guidance_strength: strength of conditional generation. It is not used if y is null.
         :param token_mask: token mask;              shape: (1, 1, n_vocab)
@@ -733,9 +737,7 @@ class ChemBFN(nn.Module):
         x_onehot = nn.functional.one_hot(x, self.K) * mask
         theta = x_onehot + (1 - mask) * theta
         if y is not None:
-            assert y.dim() == 3  # this doesn't work if the model is frezen in JIT.
-            if y.shape[0] == 1:
-                y = y.repeat(n_b, 1, 1)
+            y = self.reshape_y(y)
         for i in torch.linspace(1, sample_step, sample_step, device=x.device):
             t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
             p = self.discrete_output_distribution(theta, t, y, guidance_strength)
@@ -769,7 +771,7 @@ class ChemBFN(nn.Module):
         ODE inpainting.
 
         :param x: categorical indices of scaffold;  shape: (n_b, n_t)
-        :param y: conditioning vector;              shape: (n_b, 1, n_f)
+        :param y: conditioning vector;              shape: (n_b, 1, n_f) or (n_b, n_f)
         :param sample_step: number of sampling steps
         :param guidance_strength: strength of conditional generation. It is not used if y is null.
         :param token_mask: token mask;              shape: (1, 1, n_vocab)
@@ -789,9 +791,7 @@ class ChemBFN(nn.Module):
         x_onehot = nn.functional.one_hot(x, self.K) * mask
         z = torch.zeros((n_b, n_t, self.K), device=self.beta.device)
         if y is not None:
-            assert y.dim() == 3  # this doesn't work if the model is frezen in JIT.
-            if y.shape[0] == 1:
-                y = y.repeat(n_b, 1, 1)
+            y = self.reshape_y(y)
         for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
             t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
             theta = torch.softmax(z, -1)
@@ -847,13 +847,7 @@ class ChemBFN(nn.Module):
         with open(ckpt, "rb") as f:
             state = torch.load(f, "cpu", weights_only=True)
         nn, hparam = state["nn"], state["hparam"]
-        model = cls(
-            hparam["num_vocab"],
-            hparam["channel"],
-            hparam["num_layer"],
-            hparam["num_head"],
-            hparam["dropout"],
-        )
+        model = cls(**hparam)
         model.load_state_dict(nn, False)
         if ckpt_lora:
             with open(ckpt_lora, "rb") as g:
@@ -926,9 +920,381 @@ class MLP(nn.Module):
         with open(ckpt, "rb") as f:
             state = torch.load(f, "cpu", weights_only=True)
         nn, hparam = state["nn"], state["hparam"]
-        model = cls(hparam["size"], hparam["class_input"], hparam["dropout"])
+        model = cls(**hparam)
         model.load_state_dict(nn, strict)
         return model
+
+
+class EnsembleChemBFN(ChemBFN):
+    """
+    This module does not fully support `torch.jit.script`. We have `EnsembleChemBFN.jit()`
+    method to JIT compile the submodels.
+    `torch.compile()` is a better choice to compiling the whole model.
+    """
+
+    def __init__(
+        self,
+        base_model_path: Union[str, Path],
+        lora_paths: Union[List[Union[str, Path]], Dict[str, Union[str, Path]]],
+        cond_heads: Union[List[nn.Module], Dict[str, nn.Module]],
+        adapter_weights: Optional[Union[List[float], Dict[str, float]]] = None,
+        semi_autoregressive_flags: Optional[Union[List[bool], Dict[str, bool]]] = None,
+    ) -> None:
+        """
+        Ensemble of ChemBFN models from LoRA checkpoints.
+
+        :param base_model_path: base model checkpoint file
+        :param lora_paths: a list of LoRA checkpoint files or a `dict` instance of these files
+        :param cond_heads: a list of conditioning network heads or a `dict` instance of these networks
+        :param adapter_weights: a list of weights of each LoRA finetuned model or a 'dict` instance of these weights; default is equally weighted
+        :param semi_autoregressive_flags: a list of the semi-autoregressive behaviour states of each LoRA finetuned model or a `dict` instance of these states; default is all `False`
+        :type base_model_path: str | pathlib.Path
+        :type lora_paths: list | dict
+        :type cond_heads: list | dict
+        :type adapter_weights: list | dict | None
+        :type semi_autoregressive_flags: list | dict | None
+        """
+        n = len(lora_paths)
+        assert type(lora_paths) == type(
+            cond_heads
+        ), "`lora_paths` and `cond_heads` should have the same type!"
+        assert n == len(
+            cond_heads
+        ), "`lora_paths` and `cond_heads` should have the same length!"
+        if adapter_weights:
+            assert type(lora_paths) == type(
+                adapter_weights
+            ), "`lora_paths` and `adapter_weights` should have the same type!"
+            assert n == len(
+                adapter_weights
+            ), "`lora_paths` and `adapter_weights` should have the same length!"
+        if semi_autoregressive_flags:
+            assert type(lora_paths) == type(
+                semi_autoregressive_flags
+            ), "`lora_paths` and `semi_autoregressive_flags` should have the same type!"
+            assert n == len(
+                semi_autoregressive_flags
+            ), "`lora_paths` and `semi_autoregressive_flags` should have the same length!"
+        _label_is_dict = isinstance(lora_paths, dict)
+        if isinstance(lora_paths, list):
+            names = tuple(f"val_{i}" for i in range(n))
+            lora_paths = dict(zip(names, lora_paths))
+            cond_heads = dict(zip(names, cond_heads))
+            if not adapter_weights:
+                adapter_weights = (1 / n for _ in names)
+            if not semi_autoregressive_flags:
+                semi_autoregressive_flags = (False for _ in names)
+            adapter_weights = dict(zip(names, adapter_weights))
+            semi_autoregressive_flags = dict(zip(names, semi_autoregressive_flags))
+        else:
+            names = tuple(lora_paths.keys())
+            if not adapter_weights:
+                adapter_weights = dict(zip(names, (1 / n for _ in names)))
+            if not semi_autoregressive_flags:
+                semi_autoregressive_flags = dict(zip(names, (False for _ in names)))
+        base_model = ChemBFN.from_checkpoint(base_model_path)
+        models = dict(zip(names, (deepcopy(base_model.eval()) for _ in names)))
+        for k in names:
+            with open(lora_paths[k], "rb") as f:
+                state = torch.load(f, "cpu", weights_only=True)
+            lora_nn, lora_param = state["lora_nn"], state["lora_param"]
+            models[k].enable_lora(**lora_param)
+            models[k].load_state_dict(lora_nn, False)
+            models[k].semi_autoregressive = semi_autoregressive_flags[k]
+        super().__init__(**base_model.hparam)
+        self.cond_heads = nn.ModuleDict(cond_heads)
+        self.models = nn.ModuleDict(models)
+        self.adapter_weights = adapter_weights
+        self._label_is_dict = _label_is_dict  # flag
+        # ------- remove unnecessary submodules -------
+        self.embedding = None
+        self.time_embed = None
+        self.position = None
+        self.encoder_layers = None
+        self.final_layer = None
+        self.__delattr__("embedding")
+        self.__delattr__("time_embed")
+        self.__delattr__("position")
+        self.__delattr__("encoder_layers")
+        self.__delattr__("final_layer")
+        # ------- remove unused attributes -------
+        self.__delattr__("semi_autoregressive")
+        self.__delattr__("lora_enabled")
+        self.__delattr__("lora_param")
+        self.__delattr__("hparam")
+
+    def construct_y(
+        self, c: Union[List[Tensor], Dict[str, Tensor]]
+    ) -> Dict[str, Tensor]:
+        assert (
+            isinstance(c, dict) is self._label_is_dict
+        ), f"`c` should be a {'`dict` instance' if self._label_is_dict else '`list` instance'} but got {type(c)} instand."
+        out: Dict[str, Tensor] = {}
+        if isinstance(c, list):
+            c = dict(zip([f"val_{i}" for i in range(len(c))], c))
+        for name, model in self.cond_heads.items():
+            y = model.forward(c[name])
+            if y.dim() == 2:
+                y = y[:, None, :]
+            out[name] = y
+        return out
+
+    def discrete_output_distribution(
+        self, theta: Tensor, t: Tensor, y: Dict[str, Tensor], w: float
+    ) -> Tensor:
+        """
+        :param theta: input distribution;          shape: (n_b, n_t, n_vocab)
+        :param t: continuous time in [0, 1];       shape: (n_b, 1, 1)
+        :param y: a dict of conditioning vectors;  shape: (n_b, 1, n_f) * n_h
+        :param w: guidance strength controlling the conditional generation
+        :type theta: torch.Tensor
+        :type t: torch.Tensor
+        :type y: dict
+        :type w: float
+        :return: output distribution;              shape: (n_b, n_t, n_vocab)
+        :rtype: torch.Tensor
+        """
+        theta = 2 * theta - 1  # rescale to [-1, 1]
+        p_uncond, p_cond = torch.zeros_like(theta), torch.zeros_like(theta)
+        # Q: Why not use `torch.vmap`? It's faster than doing the loop, isn't it?
+        #
+        # A: We have quite a few reasons to avoid using `vmap`:
+        #    1. JIT doesn't support vmap;
+        #    2. It's harder to switch on/off semi-autroregssive behaviours for individual
+        #       models when all models are stacked into one (we have a solution but it's not
+        #       that elegant);
+        #    3. We just found that the result from vmap was not identical to doing the loop;
+        #    4. vmap requires all models have the same size but it's not always that case
+        #       since we sometimes use different ranks of LoRA in finetuning.
+        for name, model in self.models.items():
+            p_uncond_ = model.forward(theta, t, None, None)
+            p_uncond += p_uncond_ * self.adapter_weights[name]
+            p_cond_ = model.forward(theta, t, None, y[name])
+            p_cond += p_cond_ * self.adapter_weights[name]
+        return softmax((1 + w) * p_cond - w * p_uncond, -1)
+
+    @staticmethod
+    def reshape_y(y: Dict[str, Tensor]) -> Dict[str, Tensor]:
+        for k in y:
+            assert y[k].dim() <= 3
+            if y[k].dim() == 2:
+                y[k] = y[k][:, None, :]
+        return y
+
+    @torch.inference_mode()
+    def sample(
+        self,
+        batch_size: int,
+        sequence_size: int,
+        conditions: Union[List[Tensor], Dict[str, Tensor]],
+        sample_step: int = 100,
+        guidance_strength: float = 4.0,
+        token_mask: Optional[Tensor] = None,
+    ) -> Tuple[Tensor, Tensor]:
+        """
+        Sample from a piror distribution.
+
+        :param batch_size: batch size
+        :param sequence_size: max sequence length
+        :param conditions: guidance conditions;  shape: (n_b, n_c) * n_h
+        :param sample_step: number of sampling steps
+        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param token_mask: token mask;           shape: (1, 1, n_vocab)
+        :type batch_size: int
+        :type sequence_size: int
+        :type conditions: list | dict
+        :type sample_step: int
+        :type guidance_strength: float
+        :type token_mask: torch.Tensor | None
+        :return: sampled token indices;          shape: (n_b, n_t) \n
+                 entropy of the tokens;          shape: (n_b)
+        :rtype: tuple
+        """
+        y = self.construct_y(conditions)
+        return super().sample(
+            batch_size, sequence_size, y, sample_step, guidance_strength, token_mask
+        )
+
+    @torch.inference_mode()
+    def ode_sample(
+        self,
+        batch_size: int,
+        sequence_size: int,
+        conditions: Union[List[Tensor], Dict[str, Tensor]],
+        sample_step: int = 100,
+        guidance_strength: float = 4.0,
+        token_mask: Optional[Tensor] = None,
+        temperature: float = 0.5,
+    ) -> Tuple[Tensor, Tensor]:
+        """
+        ODE-based sampling.
+
+        :param batch_size: batch size
+        :param sequence_size: max sequence length
+        :param conditions: conditioning vector;  shape: (n_b, n_c) * n_h
+        :param sample_step: number of sampling steps
+        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param token_mask: token mask;           shape: (1, 1, n_vocab)
+        :param temperature: sampling temperature
+        :type batch_size: int
+        :type sequence_size: int
+        :type conditions: list | dict
+        :type sample_step: int
+        :type guidance_strength: float
+        :type token_mask: torch.Tensor | None
+        :type temperature: float
+        :return: sampled token indices;          shape: (n_b, n_t) \n
+                 entropy of the tokens;          shape: (n_b)
+        :rtype: tuple
+        """
+        y = self.construct_y(conditions)
+        return super().ode_sample(
+            batch_size,
+            sequence_size,
+            y,
+            sample_step,
+            guidance_strength,
+            token_mask,
+            temperature,
+        )
+
+    @torch.inference_mode()
+    def inpaint(
+        self,
+        x: Tensor,
+        conditions: Union[List[Tensor], Dict[str, Tensor]],
+        sample_step: int = 100,
+        guidance_strength: float = 4.0,
+        token_mask: Optional[Tensor] = None,
+    ) -> Tuple[Tensor, Tensor]:
+        """
+        Molecule inpaint functionality.
+
+        :param x: categorical indices of scaffold;  shape: (n_b, n_t)
+        :param conditions: conditioning vector;     shape: (n_b, n_c) * n_h
+        :param sample_step: number of sampling steps
+        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param token_mask: token mask;              shape: (1, 1, n_vocab)
+        :type x: torch.Tensor
+        :type conditions: list | dict
+        :type sample_step: int
+        :type guidance_strength: float
+        :type token_mask: torch.Tensor | None
+        :return: sampled token indices;             shape: (n_b, n_t) \n
+                 entropy of the tokens;             shape: (n_b)
+        :rtype: tuple
+        """
+        y = self.construct_y(conditions)
+        return super().inpaint(x, y, sample_step, guidance_strength, token_mask)
+
+    @torch.inference_mode()
+    def ode_inpaint(
+        self,
+        x: Tensor,
+        conditions: Union[List[Tensor], Dict[str, Tensor]],
+        sample_step: int = 100,
+        guidance_strength: float = 4.0,
+        token_mask: Optional[Tensor] = None,
+        temperature: float = 0.5,
+    ) -> Tuple[Tensor, Tensor]:
+        """
+        ODE inpainting.
+
+        :param x: categorical indices of scaffold;  shape: (n_b, n_t)
+        :param conditions: conditioning vector;     shape: (n_b, n_c) * n_h
+        :param sample_step: number of sampling steps
+        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param token_mask: token mask;              shape: (1, 1, n_vocab)
+        :param temperature: sampling temperature
+        :type x: torch.Tensor
+        :type conditions: list | dict
+        :type sample_step: int
+        :type guidance_strength: float
+        :type token_mask: torch.Tensor | None
+        :type temperature: float
+        :return: sampled token indices;             shape: (n_b, n_t) \n
+                 entropy of the tokens;             shape: (n_b)
+        :rtype: tuple
+        """
+        y = self.construct_y(conditions)
+        return super().ode_inpaint(
+            x, y, sample_step, guidance_strength, token_mask, temperature
+        )
+
+    def quantise(
+        self, quantise_method: Optional[Callable[[ChemBFN], nn.Module]] = None
+    ) -> None:
+        """
+        Quantise the submodels. \n
+        This method should be called, if necessary, before `torch.compile()`.
+
+        :param quantise_method: quantisation method; default is `bayesianflow_for_chem.tool.quantise_model`
+        :type quantise_method: callable | None
+        :return:
+        :rtype: None
+        """
+        if quantise_method is None:
+            from bayesianflow_for_chem.tool import quantise_model
+
+            quantise_method = quantise_model
+        for k, v in self.models.items():
+            self.models[k] = quantise_method(v)
+
+    def jit(self, freeze: bool = False) -> None:
+        """
+        JIT compile the submodels. \n
+        This method should be called, if necessary, before `quantise()` method is called if applied.
+
+        :param freeze: whether to freeze the submodels; default is `False`. If set to `True` this
+                       method should be called before moving the model to a different device.
+        :type freeze: bool
+        :return:
+        :rtype: None
+        """
+        for k, v in self.models.items():
+            self.models[k] = torch.jit.script(v)
+            if freeze:
+                self.models[k] = torch.jit.freeze(
+                    self.models[k], ["semi_autoregressive"]
+                )
+
+    @torch.jit.ignore
+    def forward(self, *_, **__) -> None:
+        """
+        Don't use this method!
+        """
+        raise NotImplementedError("There's nothing here!")
+
+    def cts_loss(self, *_, **__) -> None:
+        """
+        Don't use this method!
+        """
+        raise NotImplementedError("There's nothing here!")
+
+    def reconstruction_loss(self, *_, **__) -> None:
+        """
+        Don't use this method!
+        """
+        raise NotImplementedError("There's nothing here!")
+
+    def enable_lora(self, *_, **__) -> None:
+        """
+        Don't use this method!
+        """
+        raise NotImplementedError("There's nothing here!")
+
+    def inference(self, *_, **__) -> None:
+        """
+        Don't use this method!
+        """
+        raise NotImplementedError("There's nothing here!")
+
+    @classmethod
+    def from_checkpoint(cls, *_, **__) -> None:
+        """
+        Don't use this method!
+        """
+        raise NotImplementedError("There's nothing here!")
 
 
 if __name__ == "__main__":

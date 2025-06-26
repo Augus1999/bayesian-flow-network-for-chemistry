@@ -37,7 +37,8 @@ class Model(LightningModule):
         """
         A `~lightning.LightningModule` wrapper of bayesian flow network for chemistry model.\n
         This module is used in training stage only. By calling `Model(...).export_model(YOUR_WORK_DIR)` after training,
-        the model(s) will be saved to `YOUR_WORK_DIR/model.pt` and (if exists) `YOUR_WORK_DIR/mlp.pt`.
+        the model(s) will be saved to `YOUR_WORK_DIR/model.pt` (if LoRA is enabled then `YOUR_WORK_DIR/lora.pt`)
+        and (if exists) `YOUR_WORK_DIR/mlp.pt`.
 
         :param model: `~bayesianflow_for_chem.model.ChemBFN` instance.
         :param mlp: `~bayesianflow_for_chem.model.MLP` instance or `None`.
@@ -135,7 +136,8 @@ class Regressor(LightningModule):
         """
         A `~lightning.LightningModule` wrapper of bayesian flow network for chemistry regression model.\n
         This module is used in training stage only. By calling `Regressor(...).export_model(YOUR_WORK_DIR)` after training,
-        the models will be saved to `YOUR_WORK_DIR/model.pt` and `YOUR_WORK_DIR/readout.pt`.
+        the models will be saved to `YOUR_WORK_DIR/model_ft.pt` (if LoRA is enabled then `YOUR_WORK_DIR/lora.pt`)
+        and `YOUR_WORK_DIR/readout.pt`.
 
         :param model: `~bayesianflow_for_chem.model.ChemBFN` instance.
         :param mlp: `~bayesianflow_for_chem.model.MLP` instance.
@@ -218,7 +220,7 @@ class Regressor(LightningModule):
         """
         Save the trained model.
 
-        :param workdir: the directory to save the model
+        :param workdir: the directory to save the models
         :type workdir: pathlib.Path
         :return:
         :rtype: None

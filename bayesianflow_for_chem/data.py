@@ -55,7 +55,7 @@ aa_regex = re.compile(AA_REGEX_PATTERN)
 
 
 def load_vocab(
-    vocab_file: Union[str, Path]
+    vocab_file: Union[str, Path],
 ) -> Dict[str, Union[int, List[str], Dict[str, int]]]:
     """
     Load vocabulary from source file.
@@ -108,7 +108,7 @@ def geo2vec(geo2seq: str) -> List[int]:
     """
     Geo2Seq tokenisation using a dataset-independent regex pattern.
 
-    :param geo2seq: Geo2Seq string
+    :param geo2seq: `GEO2SEQ` string
     :type geo2seq: str
     :return: tokens w/o `<start>` and `<end>`
     :rtype: list

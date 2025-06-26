@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Author: Nianze A. TAO (Omozawa SUENO)
 """
-Scorers.
+Define essential scorers.
 """
 from typing import List, Callable, Union, Optional
 import torch
