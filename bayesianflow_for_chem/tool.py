@@ -18,7 +18,15 @@ from torch.ao import quantization
 from torch.utils.data import DataLoader
 from typing_extensions import Self
 from rdkit.Chem.rdchem import Mol, Bond
-from rdkit.Chem import rdDetermineBonds, MolFromXYZBlock, MolToSmiles, CanonSmiles
+from rdkit.Chem import (
+    rdDetermineBonds,
+    MolFromXYZBlock,
+    MolFromSmiles,
+    MolToSmiles,
+    CanonSmiles,
+    AllChem,
+    AddHs,
+)
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles  # type: ignore
 from sklearn.metrics import (
     roc_auc_score,
@@ -41,33 +49,12 @@ from .data import VOCAB_KEYS
 from .model import ChemBFN, MLP, Linear, EnsembleChemBFN
 
 
-_atom_regex_pattern = (
-    r"(H[e,f,g,s,o]?|"
-    r"L[i,v,a,r,u]|"
-    r"B[e,r,a,i,h,k]?|"
-    r"C[l,a,r,o,u,d,s,n,e,m,f]?|"
-    r"N[e,a,i,b,h,d,o,p]?|"
-    r"O[s,g]?|S[i,c,e,r,n,m,b,g]?|"
-    r"K[r]?|T[i,c,e,a,l,b,h,m,s]|"
-    r"G[a,e,d]|R[b,u,h,e,n,a,f,g]|"
-    r"Yb?|Z[n,r]|P[t,o,d,r,a,u,b,m]?|"
-    r"F[e,r,l,m]?|M[g,n,o,t,c,d]|"
-    r"A[l,r,s,g,u,t,c,m]|I[n,r]?|"
-    r"W|X[e]|E[u,r,s]|U|D[b,s,y])"
-)
-_atom_regex = re.compile(_atom_regex_pattern)
-
-
 def _find_device() -> torch.device:
     if cuda.is_available():
         return torch.device("cuda")
     elif torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
-
-
-def _bond_pair_idx(bonds: Bond) -> List[List[int]]:
-    return [[i.GetBeginAtomIdx(), i.GetEndAtomIdx()] for i in bonds]
 
 
 @torch.no_grad()
@@ -552,6 +539,22 @@ class GeometryConverter:
     Converting between different 2D/3D molecular representations.
     """
 
+    _atom_regex_pattern = (
+        r"(H[e,f,g,s,o]?|"
+        r"L[i,v,a,r,u]|"
+        r"B[e,r,a,i,h,k]?|"
+        r"C[l,a,r,o,u,d,s,n,e,m,f]?|"
+        r"N[e,a,i,b,h,d,o,p]?|"
+        r"O[s,g]?|S[i,c,e,r,n,m,b,g]?|"
+        r"K[r]?|T[i,c,e,a,l,b,h,m,s]|"
+        r"G[a,e,d]|R[b,u,h,e,n,a,f,g]|"
+        r"Yb?|Z[n,r]|P[t,o,d,r,a,u,b,m]?|"
+        r"F[e,r,l,m]?|M[g,n,o,t,c,d]|"
+        r"A[l,r,s,g,u,t,c,m]|I[n,r]?|"
+        r"W|X[e]|E[u,r,s]|U|D[b,s,y])"
+    )
+    _atom_regex = re.compile(_atom_regex_pattern)
+
     @staticmethod
     def _xyz2mol(symbols: List[str], coordinates: np.ndarray) -> Mol:
         xyz_block = [str(len(symbols)), ""]
@@ -559,6 +562,42 @@ class GeometryConverter:
         for i, atom in enumerate(symbols):
             xyz_block.append(f"{atom} {r[i][0]:.10f} {r[i][1]:.10f} {r[i][2]:.10f}")
         return MolFromXYZBlock("\n".join(xyz_block))
+
+    @staticmethod
+    def _bond_pair_idx(bonds: Bond) -> List[List[int]]:
+        return [[i.GetBeginAtomIdx(), i.GetEndAtomIdx()] for i in bonds]
+
+    @staticmethod
+    def smiles2cartesian(
+        smiles: str, num_conformers: int = 50, random_seed: int = 42
+    ) -> Tuple[List[str], np.ndarray]:
+        """
+        Guess the 3D geometry from SMILES string via MMFF conformer search.
+
+        :param smiles: a valid SMILES string
+        :param num_conformers: number of initial conformers
+        :param random_seed: random seed used to generate conformers
+        :type smiles: str
+        :type num_conformers: int
+        :type random_seed: int
+        :return: atomic symbols \n
+                 cartesian coordinates;  shape: (n_a, 3)
+        :rtype: tuple
+        """
+        mol = MolFromSmiles(smiles)
+        mol = AddHs(mol)
+        AllChem.EmbedMultipleConfs(mol, numConfs=num_conformers, randomSeed=random_seed)
+        symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
+        energies = []
+        for conf_id in range(num_conformers):
+            ff = AllChem.MMFFGetMoleculeForceField(
+                mol, AllChem.MMFFGetMoleculeProperties(mol), confId=conf_id
+            )
+            energy = ff.CalcEnergy()
+            energies.append((conf_id, energy))
+        lowest_energy_conf = min(energies, key=lambda x: x[1])
+        coordinates = mol.GetConformer(id=lowest_energy_conf[0]).GetPositions()
+        return symbols, coordinates
 
     def cartesian2smiles(
         self,
@@ -615,7 +654,7 @@ class GeometryConverter:
         mol = self._xyz2mol(symbols, coordinates)
         rdDetermineBonds.DetermineConnectivity(mol)
         # ------- Canonicalization -------
-        pair_idx = np.array(_bond_pair_idx(mol.GetBonds())).T.tolist()
+        pair_idx = np.array(self._bond_pair_idx(mol.GetBonds())).T.tolist()
         pair_dict: Dict[int, List[int]] = {}
         for key, i in enumerate(pair_idx[0]):
             if i not in pair_dict:
@@ -692,8 +731,7 @@ class GeometryConverter:
         ]
         return " ".join(info)
 
-    @staticmethod
-    def seq2geo(seq: str) -> Tuple[Optional[List[str]], Optional[np.ndarray]]:
+    def seq2geo(self, seq: str) -> Tuple[Optional[List[str]], Optional[np.ndarray]]:
         """
         Sequence-to-geometry function.\n
         The method follows the descriptions in paper: https://arxiv.org/abs/2408.10120.
@@ -708,7 +746,7 @@ class GeometryConverter:
             return None, None
         tokens = np.array(tokens).reshape(-1, 4)
         symbols, coordinates = tokens[::, 0], tokens[::, 1:]
-        if sum([len(_atom_regex.findall(sym)) for sym in symbols]) != len(symbols):
+        if sum([len(self._atom_regex.findall(sym)) for sym in symbols]) != len(symbols):
             return None, None
         try:
             coord = [[float(i) for i in j] for j in coordinates]
