@@ -45,7 +45,7 @@ You can find pretrained models on our [🤗Hugging Face model page](https://hugg
 
 We provide a Python class [`CSVData`](./bayesianflow_for_chem/data.py) to handle data stored in CSV or similar format containing headers to identify the entities. The following is a quickstart.
 
-1. Download your dataset file (e.g., ESOL form [MoleculeNet](https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/delaney-processed.csv)) and split the file:
+1. Download your dataset file (e.g., ESOL from [MoleculeNet](https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/delaney-processed.csv)) and split the file:
 ```python
 >>> from bayesianflow_for_chem.tool import split_data
 
