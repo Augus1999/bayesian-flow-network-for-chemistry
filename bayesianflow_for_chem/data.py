@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Author: Nianze A. TAO (Omozawa SUENO)
 """
-Tokenise SMILES/SAFE/SELFIES/GEO2SEQ/protein-sequence strings.
+Tokenise SMILES/SAFE/SELFIES/protein-sequence strings.
 """
 import os
 import re
@@ -32,25 +32,9 @@ SMI_REGEX_PATTERN = (
     r"~|@|\?|>>?|\*|\$|\%[0-9]{2}|[0-9])"
 )
 SEL_REGEX_PATTERN = r"(\[[^\]]+]|\.)"
-GEO_REGEX_PATTERN = (
-    r"(H[e,f,g,s,o]?|"
-    r"L[i,v,a,r,u]|"
-    r"B[e,r,a,i,h,k]?|"
-    r"C[l,a,r,o,u,d,s,n,e,m,f]?|"
-    r"N[e,a,i,b,h,d,o,p]?|"
-    r"O[s,g]?|S[i,c,e,r,n,m,b,g]?|"
-    r"K[r]?|T[i,c,e,a,l,b,h,m,s]|"
-    r"G[a,e,d]|R[b,u,h,e,n,a,f,g]|"
-    r"Yb?|Z[n,r]|P[t,o,d,r,a,u,b,m]?|"
-    r"F[e,r,l,m]?|M[g,n,o,t,c,d]|"
-    r"A[l,r,s,g,u,t,c,m]|I[n,r]?|"
-    r"W|X[e]|E[u,r,s]|U|D[b,s,y]|"
-    r"-|.| |[0-9])"
-)
 AA_REGEX_PATTERN = r"(A|B|C|D|E|F|G|H|I|K|L|M|N|P|Q|R|S|T|V|W|Y|Z|-|.)"
 smi_regex = re.compile(SMI_REGEX_PATTERN)
 sel_regex = re.compile(SEL_REGEX_PATTERN)
-geo_regex = re.compile(GEO_REGEX_PATTERN)
 aa_regex = re.compile(AA_REGEX_PATTERN)
 
 
@@ -86,9 +70,6 @@ AA_VOCAB_KEYS = (
 )
 AA_VOCAB_COUNT = len(AA_VOCAB_KEYS)
 AA_VOCAB_DICT = dict(zip(AA_VOCAB_KEYS, range(AA_VOCAB_COUNT)))
-GEO_VOCAB_KEYS = VOCAB_KEYS[0:3] + [" "] + VOCAB_KEYS[22:150] + [".", "-"]
-GEO_VOCAB_COUNT = len(GEO_VOCAB_KEYS)
-GEO_VOCAB_DICT = dict(zip(GEO_VOCAB_KEYS, range(GEO_VOCAB_COUNT)))
 
 
 def smiles2vec(smiles: str) -> List[int]:
@@ -102,19 +83,6 @@ def smiles2vec(smiles: str) -> List[int]:
     """
     tokens = [token for token in smi_regex.findall(smiles)]
     return [VOCAB_DICT[token] for token in tokens]
-
-
-def geo2vec(geo2seq: str) -> List[int]:
-    """
-    Geo2Seq tokenisation using a dataset-independent regex pattern.
-
-    :param geo2seq: `GEO2SEQ` string
-    :type geo2seq: str
-    :return: tokens w/o `<start>` and `<end>`
-    :rtype: list
-    """
-    tokens = [token for token in geo_regex.findall(geo2seq)]
-    return [GEO_VOCAB_DICT[token] for token in tokens]
 
 
 def aa2vec(aa_seq: str) -> List[int]:
@@ -145,11 +113,6 @@ def split_selfies(selfies: str) -> List[str]:
 def smiles2token(smiles: str) -> Tensor:
     # start token: <start> = 1; end token: <esc> = 2
     return torch.tensor([1] + smiles2vec(smiles) + [2], dtype=torch.long)
-
-
-def geo2token(geo2seq: str) -> Tensor:
-    # start token: <start> = 1; end token: <esc> = 2
-    return torch.tensor([1] + geo2vec(geo2seq) + [2], dtype=torch.long)
 
 
 def aa2token(aa_seq: str) -> Tensor:

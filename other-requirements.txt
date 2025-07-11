@@ -1,5 +1,4 @@
 molsets>=1.0
 selfies>=2.1.1
-pynauty>=2.8.8.1
 guacamol>=0.5.5
 tensorboard>=2.16.0

@@ -3,7 +3,6 @@
 """
 Essential tools.
 """
-import re
 import csv
 import random
 import warnings
@@ -36,15 +35,6 @@ from sklearn.metrics import (
     mean_absolute_error,
     root_mean_squared_error,
 )
-
-try:
-    from pynauty import Graph, canon_label  # type: ignore
-
-    _use_pynauty = True
-except ImportError:
-    import platform
-
-    _use_pynauty = False
 from .data import VOCAB_KEYS
 from .model import ChemBFN, MLP, Linear, EnsembleChemBFN
 
@@ -480,6 +470,8 @@ def quantise_model(model: ChemBFN) -> nn.Module:
             assert hasattr(
                 mod, "qconfig"
             ), "Input float module must have qconfig defined"
+            if use_precomputed_fake_quant:
+                warnings.warn("Fake quantize operator is not implemented.")
             if mod.qconfig is not None and mod.qconfig.weight is not None:
                 weight_observer = mod.qconfig.weight()
             else:
@@ -538,22 +530,6 @@ class GeometryConverter:
     """
     Converting between different 2D/3D molecular representations.
     """
-
-    _atom_regex_pattern = (
-        r"(H[e,f,g,s,o]?|"
-        r"L[i,v,a,r,u]|"
-        r"B[e,r,a,i,h,k]?|"
-        r"C[l,a,r,o,u,d,s,n,e,m,f]?|"
-        r"N[e,a,i,b,h,d,o,p]?|"
-        r"O[s,g]?|S[i,c,e,r,n,m,b,g]?|"
-        r"K[r]?|T[i,c,e,a,l,b,h,m,s]|"
-        r"G[a,e,d]|R[b,u,h,e,n,a,f,g]|"
-        r"Yb?|Z[n,r]|P[t,o,d,r,a,u,b,m]?|"
-        r"F[e,r,l,m]?|M[g,n,o,t,c,d]|"
-        r"A[l,r,s,g,u,t,c,m]|I[n,r]?|"
-        r"W|X[e]|E[u,r,s]|U|D[b,s,y])"
-    )
-    _atom_regex = re.compile(_atom_regex_pattern)
 
     @staticmethod
     def _xyz2mol(symbols: List[str], coordinates: np.ndarray) -> Mol:
@@ -626,135 +602,3 @@ class GeometryConverter:
         if canonical:
             smiles = CanonSmiles(smiles)
         return smiles
-
-    def canonicalise(
-        self, symbols: List[str], coordinates: np.ndarray
-    ) -> Tuple[List[str], np.ndarray]:
-        """
-        Canonicalising the 3D molecular graph.
-
-        :param symbols: a list of atomic symbols
-        :param coordinates: Cartesian coordinates;  shape: (n_a, 3)
-        :type symbols: list
-        :type coordinates: numpy.ndarray
-        :return: canonicalised symbols \n
-                 canonicalised coordinates;         shape: (n_a, 3)
-        :rtype: tuple
-        """
-        if not _use_pynauty:
-            if platform.system() == "Windows":
-                raise NotImplementedError(
-                    "This method is not implemented on Windows platform."
-                )
-            else:
-                raise ImportError("`pynauty` is not installed.")
-        n = len(symbols)
-        if n == 1:
-            return symbols, coordinates
-        mol = self._xyz2mol(symbols, coordinates)
-        rdDetermineBonds.DetermineConnectivity(mol)
-        # ------- Canonicalization -------
-        pair_idx = np.array(self._bond_pair_idx(mol.GetBonds())).T.tolist()
-        pair_dict: Dict[int, List[int]] = {}
-        for key, i in enumerate(pair_idx[0]):
-            if i not in pair_dict:
-                pair_dict[i] = [pair_idx[1][key]]
-            else:
-                pair_dict[i].append(pair_idx[1][key])
-        g = Graph(n, adjacency_dict=pair_dict)
-        cl = canon_label(g)  # type: list
-        symbols = np.array([[s] for s in symbols])[cl].flatten().tolist()
-        coordinates = coordinates[cl]
-        return symbols, coordinates
-
-    @staticmethod
-    def cartesian2spherical(coordinates: np.ndarray) -> np.ndarray:
-        """
-        Transforming Cartesian coordinate to spherical form.\n
-        The method is adapted from the paper: https://arxiv.org/abs/2408.10120.
-
-        :param coordinates: Cartesian coordinates;  shape: (n_a, 3)
-        :type coordinates: numpy.ndarray
-        :return: spherical coordinates;             shape: (n_a, 3)
-        :rtype: numpy.ndarray
-        """
-        n = coordinates.shape[0]
-        if n == 1:
-            return np.array([[0.0, 0.0, 0.0]])
-        # ------- Find global coordinate frame -------
-        if n == 2:
-            d = np.linalg.norm(coordinates[0] - coordinates[1], 2)
-            return np.array([[0.0, 0.0, 0.0], [d, 0.0, 0.0]])
-        for idx_0 in range(n - 2):
-            _vec0 = coordinates[idx_0] - coordinates[idx_0 + 1]
-            _vec1 = coordinates[idx_0] - coordinates[idx_0 + 2]
-            _d1 = np.linalg.norm(_vec0, 2)
-            _d2 = np.linalg.norm(_vec1, 2)
-            if 1 - np.abs(np.dot(_vec0, _vec1) / (_d1 * _d2)) > 1e-6:
-                break
-        x = (coordinates[idx_0 + 1] - coordinates[idx_0]) / _d1
-        y = np.cross((coordinates[idx_0 + 2] - coordinates[idx_0]), x)
-        y_d = np.linalg.norm(y, 2)
-        y = y / np.ma.filled(np.ma.array(y_d, mask=y_d == 0), np.inf)
-        z = np.cross(x, y)
-        # ------- Build spherical coordinates -------
-        vec = coordinates - coordinates[idx_0]
-        d = np.linalg.norm(vec, 2, axis=-1)
-        _d = np.ma.filled(np.ma.array(d, mask=d == 0), np.inf)
-        theta = np.arccos(np.dot(vec, z) / _d)  # in [0, \pi]
-        phi = np.arctan2(np.dot(vec, y), np.dot(vec, x))  # in [-\pi, \pi]
-        info = np.vstack([d, theta, phi]).T
-        info[idx_0] = np.zeros_like(info[idx_0])
-        return info
-
-    def geo2seq(
-        self, symbols: List[str], coordinates: np.ndarray, decimals: int = 2
-    ) -> str:
-        """
-        Geometry-to-sequence function.\n
-        The algorithm follows the descriptions in paper: https://arxiv.org/abs/2408.10120.
-
-        :param symbols: a list of atomic symbols
-        :param coordinates: Cartesian coordinates;  shape: (n_a, 3)
-        :param decimals: the maxmium number of decimals to keep; default is 2
-        :type symbols: list
-        :type coordinates: numpy.ndarray
-        :type decimals: int
-        :return: `Geo2Seq` string
-        :rtype: str
-        """
-        symbols, coordinates = self.canonicalise(symbols, coordinates)
-        info = self.cartesian2spherical(coordinates)
-        info = [
-            f"{symbols[i]} {r[0]} {r[1]} {r[2]}"
-            for i, r in enumerate(np.round(info, decimals))
-        ]
-        return " ".join(info)
-
-    def seq2geo(self, seq: str) -> Tuple[Optional[List[str]], Optional[np.ndarray]]:
-        """
-        Sequence-to-geometry function.\n
-        The method follows the descriptions in paper: https://arxiv.org/abs/2408.10120.
-
-        :param seq: `Geo2Seq` string
-        :type seq: str
-        :return: (symbols, coordinates) if `seq` is valid
-        :rtype: tuple
-        """
-        tokens = seq.split()
-        if len(tokens) % 4 != 0:
-            return None, None
-        tokens = np.array(tokens).reshape(-1, 4)
-        symbols, coordinates = tokens[::, 0], tokens[::, 1:]
-        if sum([len(self._atom_regex.findall(sym)) for sym in symbols]) != len(symbols):
-            return None, None
-        try:
-            coord = [[float(i) for i in j] for j in coordinates]
-            coord = np.array(coord)
-        except ValueError:
-            return None, None
-        d, theta, phi = coord[::, 0, None], coord[::, 1, None], coord[::, 2, None]
-        x = d * np.sin(theta) * np.cos(phi)
-        y = d * np.sin(theta) * np.sin(phi)
-        z = d * np.cos(theta)
-        return symbols, np.concatenate([x, y, z], -1)

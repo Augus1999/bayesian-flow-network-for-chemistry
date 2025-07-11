@@ -46,7 +46,6 @@ setup(
         "scikit-learn>=1.5.0",
         "typing_extensions>=4.8.0",
     ],
-    extras_require={"geo2seq": ["pynauty>=2.8.8.1"]},
     project_urls={
         "Source": "https://github.com/Augus1999/bayesian-flow-network-for-chemistry"
     },

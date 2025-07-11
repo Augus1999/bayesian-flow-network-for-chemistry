@@ -162,8 +162,8 @@ class Attention(nn.Module):
         :return: attentioned output;   shape: (n_b, n_t, n_f)
         :rtype: torch.Tensor
         """
-        n_b, n_a, _ = shape = x.shape
-        split = (n_b, n_a, self.nh, self.d)
+        n_b, n_t, _ = shape = x.shape
+        split = (n_b, n_t, self.nh, self.d)
         q, k, v = self.qkv(x).chunk(3, -1)
         q = q.view(split).permute(2, 0, 1, 3).contiguous()
         k = k.view(split).permute(2, 0, 1, 3).contiguous()
@@ -428,12 +428,12 @@ class ChemBFN(nn.Module):
         c = self.time_embed(t)
         if y is not None:
             c += y
-        pe = self.position(x.shape[1])
+        pe = self.position(n_t)
         x = self.embedding(x)
         attn_mask: Optional[Tensor] = None
         if self.semi_autoregressive:
             attn_mask = torch.tril(
-                torch.ones((1, n_b, n_t, n_t), device=self.beta.device), diagonal=0
+                torch.ones((1, n_b, n_t, n_t), device=x.device), diagonal=0
             )
         else:
             if mask is not None:
