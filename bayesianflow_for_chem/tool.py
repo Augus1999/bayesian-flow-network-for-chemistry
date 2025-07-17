@@ -16,15 +16,16 @@ from torch import cuda, Tensor, softmax
 from torch.ao import quantization
 from torch.utils.data import DataLoader
 from typing_extensions import Self
-from rdkit.Chem.rdchem import Mol, Bond
 from rdkit.Chem import (
     rdDetermineBonds,
+    GetFormalCharge,
     MolFromXYZBlock,
     MolFromSmiles,
     MolToSmiles,
     CanonSmiles,
     AllChem,
     AddHs,
+    Mol,
 )
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles  # type: ignore
 from sklearn.metrics import (
@@ -540,39 +541,90 @@ class GeometryConverter:
         return MolFromXYZBlock("\n".join(xyz_block))
 
     @staticmethod
-    def _bond_pair_idx(bonds: Bond) -> List[List[int]]:
-        return [[i.GetBeginAtomIdx(), i.GetEndAtomIdx()] for i in bonds]
-
-    @staticmethod
     def smiles2cartesian(
-        smiles: str, num_conformers: int = 50, random_seed: int = 42
+        smiles: str,
+        num_conformers: int = 50,
+        rdkit_ff_type: str = "MMFF",
+        refine_with_crest: bool = False,
+        spin: float = 0.0,
     ) -> Tuple[List[str], np.ndarray]:
         """
         Guess the 3D geometry from SMILES string via MMFF conformer search.
 
         :param smiles: a valid SMILES string
         :param num_conformers: number of initial conformers
-        :param random_seed: random seed used to generate conformers
+        :param rdkit_ff_type: force field type chosen in `'MMFF'` and `'UFF'`
+        :param refine_with_crest: find the best conformer via CREST
+        :param spin: total spin; only required when `refine_with_crest=True`
         :type smiles: str
         :type num_conformers: int
-        :type random_seed: int
+        :type rdkit_ff_type: str
+        :type refine_with_crest: bool
+        :type spin: float
         :return: atomic symbols \n
                  cartesian coordinates;  shape: (n_a, 3)
         :rtype: tuple
         """
+        assert rdkit_ff_type.lower() in ("mmff", "uff")
+        if refine_with_crest:
+            from tempfile import TemporaryDirectory
+            from subprocess import run
+
+            # We need both CREST and xTB installed.
+            if run("crest --version", shell=True).returncode != 0:
+                raise RuntimeError(
+                    "`CREST` is not found! Make sure it is installed and added into the PATH."
+                )
+            if run("xtb --version", shell=True).returncode != 0:
+                raise RuntimeError(
+                    "`xTB` is not found! Make sure it is installed and added into the PATH."
+                )
         mol = MolFromSmiles(smiles)
         mol = AddHs(mol)
-        AllChem.EmbedMultipleConfs(mol, numConfs=num_conformers, randomSeed=random_seed)
+        AllChem.EmbedMultipleConfs(mol, numConfs=num_conformers, params=AllChem.ETKDG())
         symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
         energies = []
         for conf_id in range(num_conformers):
-            ff = AllChem.MMFFGetMoleculeForceField(
-                mol, AllChem.MMFFGetMoleculeProperties(mol), confId=conf_id
-            )
+            if rdkit_ff_type.lower() == "mmff":
+                ff = AllChem.MMFFGetMoleculeForceField(
+                    mol, AllChem.MMFFGetMoleculeProperties(mol), confId=conf_id
+                )
+            else:  # UFF
+                ff = AllChem.UFFGetMoleculeForceField(mol, confId=conf_id)
             energy = ff.CalcEnergy()
             energies.append((conf_id, energy))
         lowest_energy_conf = min(energies, key=lambda x: x[1])
         coordinates = mol.GetConformer(id=lowest_energy_conf[0]).GetPositions()
+        if refine_with_crest:
+            xyz = f"{len(symbols)}\n\n" + "\n".join(
+                f"{s} {coordinates[i][0]:.10f} {coordinates[i][1]:.10f} {coordinates[i][2]:.10f}"
+                for i, s in enumerate(symbols)
+            )
+            chrg = GetFormalCharge(mol)
+            uhf = int(spin * 2)
+            with TemporaryDirectory(dir=Path.cwd()) as temp_dir:
+                with open(Path(temp_dir) / "mol.xyz", "w", encoding="utf-8") as f:
+                    f.write(xyz)
+                print(
+                    f"crest mol.xyz -gfn2 -quick -prop ohess{f' --chrg {chrg}' if chrg != 0 else ''}{f' --uhf {uhf}' if uhf != 0 else ''}"
+                )
+                s = run(
+                    f"crest mol.xyz -gfn2 -quick -prop ohess{f' --chrg {chrg}' if chrg != 0 else ''}{f' --uhf {uhf}' if uhf != 0 else ''}",
+                    shell=True,
+                    cwd=temp_dir,
+                )
+                if s.returncode == 0:
+                    with open(Path(temp_dir) / "crest_property.xyz", "r") as f:
+                        xyz = f.readlines()
+                    xyz_data = []
+                    for i in xyz[2:]:
+                        if i == xyz[0]:
+                            break
+                        xyz_data.append(i.strip().split())
+                    xyz_data = np.array(xyz_data)
+                    symbols, coordinates = np.split(xyz_data, [1], axis=-1)
+                    symbols = symbols.flatten().tolist()
+                    coordinates = coordinates.astype(np.float64)
         return symbols, coordinates
 
     def cartesian2smiles(

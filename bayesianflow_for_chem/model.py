@@ -169,16 +169,6 @@ class Attention(nn.Module):
         k = k.view(split).permute(2, 0, 1, 3).contiguous()
         v = v.view(split).permute(2, 0, 1, 3).contiguous()
         q, k = self._rotate(q, k, pe)  # position embedding
-        """
-        # Original code. Maybe using `nn.functional.scaled_dot_product_attention(...)` is better.
-
-        k_t = k.transpose(-2, -1)
-        if mask is not None:
-            alpha = softmax((q @ k_t / self.tp).masked_fill_(mask, -torch.inf), -1)
-        else:
-            alpha = softmax(q @ k_t / self.tp, -1)
-        atten_out = (alpha @ v).permute(1, 2, 0, 3).contiguous().view(shape)
-        """
         atten_out = nn.functional.scaled_dot_product_attention(
             q, k, v, mask, 0.0, False, scale=1 / self.tp
         )
@@ -430,19 +420,14 @@ class ChemBFN(nn.Module):
             c += y
         pe = self.position(n_t)
         x = self.embedding(x)
-        attn_mask: Optional[Tensor] = None
         if self.semi_autoregressive:
             attn_mask = torch.tril(
                 torch.ones((1, n_b, n_t, n_t), device=x.device), diagonal=0
             )
+        elif mask is not None:
+            attn_mask = mask.transpose(-2, -1).repeat(1, n_t, 1)[None, ...] != 0
         else:
-            if mask is not None:
-                """
-                # Original Code.
-
-                attn_mask = mask.transpose(-2, -1).repeat(1, x.shape[1], 1)[None, ...] == 0
-                """
-                attn_mask = mask.transpose(-2, -1).repeat(1, n_t, 1)[None, ...] != 0
+            attn_mask = None
         for layer in self.encoder_layers:
             x = layer(x, pe, c, attn_mask)
         return self.final_layer(x, c, mask is None)
