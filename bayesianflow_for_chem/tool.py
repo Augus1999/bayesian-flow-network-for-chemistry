@@ -605,9 +605,6 @@ class GeometryConverter:
             with TemporaryDirectory(dir=Path.cwd()) as temp_dir:
                 with open(Path(temp_dir) / "mol.xyz", "w", encoding="utf-8") as f:
                     f.write(xyz)
-                print(
-                    f"crest mol.xyz -gfn2 -quick -prop ohess{f' --chrg {chrg}' if chrg != 0 else ''}{f' --uhf {uhf}' if uhf != 0 else ''}"
-                )
                 s = run(
                     f"crest mol.xyz -gfn2 -quick -prop ohess{f' --chrg {chrg}' if chrg != 0 else ''}{f' --uhf {uhf}' if uhf != 0 else ''}",
                     shell=True,
