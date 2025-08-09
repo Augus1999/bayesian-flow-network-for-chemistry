@@ -55,9 +55,9 @@ model.enable_lora(r=4, ...)
 ## Quantise thy trained model
 
 ```python
->>> from bayesianflow_for_chem.tool import quantise_model
+>>> from bayesianflow_for_chem.tool import quantise_model_
 
->>> m = quantise_model(model)
+>>> quantise_model_(model)
 ```
 
-Now `m` is your dyanmically quantised model that can be directly used.
+Now `model` is your dyanmically quantised model that can be directly used.
