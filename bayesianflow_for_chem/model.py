@@ -54,9 +54,19 @@ class Linear(nn.Linear):
         :return:
         :rtype: None
         """
+        from torchao.dtypes.affine_quantized_tensor import AffineQuantizedTensor
+
         assert r > 0, "Rank should be larger than 0."
-        self.lora_A = nn.Parameter(self.weight.new_zeros((r, self.in_features)))
-        self.lora_B = nn.Parameter(self.weight.new_zeros((self.out_features, r)))
+        if isinstance(self.weight, AffineQuantizedTensor):
+            self.lora_A = nn.Parameter(
+                torch.zeros((r, self.in_features), device=self.weight.device)
+            )
+            self.lora_B = nn.Parameter(
+                torch.zeros((self.out_features, r), device=self.weight.device)
+            )
+        else:
+            self.lora_A = nn.Parameter(self.weight.new_zeros((r, self.in_features)))
+            self.lora_B = nn.Parameter(self.weight.new_zeros((self.out_features, r)))
         self.scaling = lora_alpha / r
         self.lora_dropout = lora_dropout
         self.lora_enabled = True
@@ -1207,23 +1217,23 @@ class EnsembleChemBFN(ChemBFN):
         )
 
     def quantise(
-        self, quantise_method: Optional[Callable[[ChemBFN], nn.Module]] = None
+        self, quantise_method: Optional[Callable[[ChemBFN], None]] = None
     ) -> None:
         """
         Quantise the submodels. \n
         This method should be called, if necessary, before `torch.compile()`.
 
-        :param quantise_method: quantisation method; default is `bayesianflow_for_chem.tool.quantise_model`
+        :param quantise_method: quantisation method; default is `bayesianflow_for_chem.tool.quantise_model_`
         :type quantise_method: callable | None
         :return:
         :rtype: None
         """
         if quantise_method is None:
-            from bayesianflow_for_chem.tool import quantise_model
+            from bayesianflow_for_chem.tool import quantise_model_
 
-            quantise_method = quantise_model
-        for k, v in self.models.items():
-            self.models[k] = quantise_method(v)
+            quantise_method = quantise_model_
+        for _, v in self.models.items():
+            quantise_method(v)
 
     def jit(self, freeze: bool = False) -> None:
         """

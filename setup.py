@@ -40,6 +40,7 @@ setup(
     install_requires=[
         "rdkit>=2023.9.6",
         "torch>=2.3.1",
+        "torchao>=0.12",
         "numpy>=1.26.4",
         "loralib>=0.1.2",
         "lightning>=2.2.0",

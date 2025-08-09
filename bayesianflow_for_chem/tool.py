@@ -13,9 +13,8 @@ import torch
 import numpy as np
 import torch.nn as nn
 from torch import cuda, Tensor, softmax
-from torch.ao import quantization
 from torch.utils.data import DataLoader
-from typing_extensions import Self
+from typing_extensions import Self, deprecated
 from rdkit.Chem import (
     rdDetermineBonds,
     GetFormalCharge,
@@ -386,6 +385,11 @@ def inpaint(
     ]
 
 
+@deprecated(
+    "Eager mode quantization from `torch.ao` is deprecated and will be remove in version 2.10, "
+    "so this fuction will stop working since that time. "
+    "Please use `quantise_model_` instead."
+)
 def quantise_model(model: ChemBFN) -> nn.Module:
     """
     Dynamic quantisation of the trained model to `torch.qint8` data type.
@@ -395,6 +399,7 @@ def quantise_model(model: ChemBFN) -> nn.Module:
     :return: quantised model
     :rtype: torch.nn.Module
     """
+    from torch.ao import quantization
     from torch.ao.nn.quantized import dynamic
     from torch.ao.nn.quantized.modules.utils import _quantize_weight
     from torch.ao.quantization.qconfig import default_dynamic_qconfig
@@ -525,6 +530,24 @@ def quantise_model(model: ChemBFN) -> nn.Module:
         model, {nn.Linear, Linear}, torch.qint8, mapping
     )
     return quantised_model
+
+
+def quantise_model_(model: ChemBFN) -> None:
+    """
+    In-place dynamic quantisation of the trained model to `int8` data type. \n
+    Due to some limitations of `torchao` module, it is slower than method previded by `torch.ao`.
+
+    :param model: trained ChemBFN model
+    :type model: bayesianflow_for_chem.model.ChemBFN
+    :return:
+    :rtype: None
+    """
+    from torchao.quantization.quant_api import (
+        quantize_,
+        Int8DynamicActivationInt8WeightConfig,
+    )
+
+    quantize_(model, Int8DynamicActivationInt8WeightConfig())
 
 
 class GeometryConverter:
