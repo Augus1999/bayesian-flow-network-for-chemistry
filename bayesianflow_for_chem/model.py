@@ -54,19 +54,17 @@ class Linear(nn.Linear):
         :return:
         :rtype: None
         """
-        from torchao.dtypes.affine_quantized_tensor import AffineQuantizedTensor
-
         assert r > 0, "Rank should be larger than 0."
-        if isinstance(self.weight, AffineQuantizedTensor):
+        try:
+            self.lora_A = nn.Parameter(self.weight.new_zeros((r, self.in_features)))
+            self.lora_B = nn.Parameter(self.weight.new_zeros((self.out_features, r)))
+        except NotImplementedError:
             self.lora_A = nn.Parameter(
                 torch.zeros((r, self.in_features), device=self.weight.device)
             )
             self.lora_B = nn.Parameter(
                 torch.zeros((self.out_features, r), device=self.weight.device)
             )
-        else:
-            self.lora_A = nn.Parameter(self.weight.new_zeros((r, self.in_features)))
-            self.lora_B = nn.Parameter(self.weight.new_zeros((self.out_features, r)))
         self.scaling = lora_alpha / r
         self.lora_dropout = lora_dropout
         self.lora_enabled = True

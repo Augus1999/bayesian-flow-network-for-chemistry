@@ -5,10 +5,12 @@ Define essential scorers.
 """
 from typing import List, Callable, Union, Optional
 import torch
+import numpy as np
 from torch import Tensor
 from rdkit import RDLogger
 from rdkit.Contrib.SA_Score import sascorer  # type: ignore
 from rdkit.Chem import MolFromSmiles, QED
+from scipy.stats import wasserstein_distance
 
 RDLogger.DisableLog("rdApp.*")  # type: ignore
 
@@ -47,6 +49,27 @@ def sa_score(smiles: str) -> float:
     :rtype: float
     """
     return sascorer.calculateScore(MolFromSmiles(smiles))
+
+
+def spectra_wasserstein_score(
+    spectrum_u: np.ndarray, spectrum_v: np.ndarray, x_axis: np.ndarray
+) -> float:
+    """
+    Return the Wasserstein distance (earth mover's distance) between two
+    continuous spectra scaled by the area under the first spectrum curve `spectrum_u`.
+
+    :param spectrum_u: the reference spectrum
+    :param spectrum_v: the
+    :param x_axis: the shared x-axis of the spectra
+    :type spectrum_u: numpy.ndarray
+    :type spectrum_v: numpy.ndarray
+    :type x_axis: numpy.ndarray
+    :return: spectra Wasserstein score
+    :rtype: float
+    """
+    assert spectrum_u.size == spectrum_v.size, "Spectra sizes should be matched."
+    a = np.sqrt(np.trapezoid(spectrum_u, x_axis))
+    return (wasserstein_distance(spectrum_u, spectrum_v) / a).item()
 
 
 class Scorer:
@@ -126,7 +149,7 @@ class Scorer:
             ]
             for i, scorer in enumerate(self.scorers)
         ]
-        loss = (e_k * p).sum(2).mean(1) * torch.tensor(scores, device=p.device).mean(0)
+        loss = (e_k * p).sum(2).mean(1) * p.new_tensor(scores).mean(0)
         return loss.mean()
 
 

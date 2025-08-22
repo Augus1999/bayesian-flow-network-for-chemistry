@@ -38,14 +38,15 @@ setup(
     packages=find_packages(),
     python_requires=">=3.9",
     install_requires=[
-        "rdkit>=2023.9.6",
-        "torch>=2.3.1",
+        "rdkit>=2025.3.5",
+        "torch>=2.8.0",
         "torchao>=0.12",
-        "numpy>=1.26.4",
+        "numpy>=2.3.2",
+        "scipy>=1.16.1",
         "loralib>=0.1.2",
-        "lightning>=2.2.0",
-        "scikit-learn>=1.5.0",
-        "typing_extensions>=4.8.0",
+        "lightning>=2.5.3",
+        "scikit-learn>=1.7.1",
+        "typing_extensions>=4.14.1",
     ],
     project_urls={
         "Source": "https://github.com/Augus1999/bayesian-flow-network-for-chemistry"

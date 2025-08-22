@@ -6,15 +6,12 @@ Essential tools.
 import csv
 import random
 import warnings
-from copy import deepcopy
 from pathlib import Path
 from typing import List, Dict, Tuple, Union, Optional
 import torch
 import numpy as np
-import torch.nn as nn
 from torch import cuda, Tensor, softmax
 from torch.utils.data import DataLoader
-from typing_extensions import Self, deprecated
 from rdkit.Chem import (
     rdDetermineBonds,
     GetFormalCharge,
@@ -36,7 +33,7 @@ from sklearn.metrics import (
     root_mean_squared_error,
 )
 from .data import VOCAB_KEYS
-from .model import ChemBFN, MLP, Linear, EnsembleChemBFN
+from .model import ChemBFN, MLP, EnsembleChemBFN
 
 
 def _find_device() -> torch.device:
@@ -385,157 +382,10 @@ def inpaint(
     ]
 
 
-@deprecated(
-    "Eager mode quantization from `torch.ao` is deprecated and will be remove in version 2.10, "
-    "so this fuction will stop working since that time. "
-    "Please use `quantise_model_` instead."
-)
-def quantise_model(model: ChemBFN) -> nn.Module:
-    """
-    Dynamic quantisation of the trained model to `torch.qint8` data type.
-
-    :param model: trained ChemBFN model
-    :type model: bayesianflow_for_chem.model.ChemBFN
-    :return: quantised model
-    :rtype: torch.nn.Module
-    """
-    from torch.ao import quantization
-    from torch.ao.nn.quantized import dynamic
-    from torch.ao.nn.quantized.modules.utils import _quantize_weight
-    from torch.ao.quantization.qconfig import default_dynamic_qconfig
-
-    class QuantisedLinear(dynamic.Linear):
-        # Modified from https://github.com/pytorch/pytorch/blob/main/torch/ao/nn/quantized/dynamic/modules/linear.py
-        # We made it compatible with our LoRA linear layer.
-        # LoRA parameters will not be quantised.
-        def __init__(
-            self,
-            in_features: int,
-            out_features: int,
-            bias_: bool = True,
-            dtype: torch.dtype = torch.qint8,
-        ) -> None:
-            super().__init__(in_features, out_features, bias_, dtype=dtype)
-            self.version = self._version
-            self.lora_enabled: bool = False
-            self.lora_A: Optional[nn.Parameter] = None
-            self.lora_B: Optional[nn.Parameter] = None
-            self.scaling: Optional[float] = None
-            self.lora_dropout: Optional[float] = None
-
-        def _get_name(self) -> str:
-            return "DynamicQuantizedLoRALinear"
-
-        def enable_lora(
-            self, r: int = 8, lora_alpha: int = 1, lora_dropout: float = 0.0
-        ) -> None:
-            assert r > 0, "Rank should be larger than 0."
-            device = self._weight_bias()[0].device
-            self.lora_A = nn.Parameter(
-                torch.zeros((r, self.in_features), device=device)
-            )
-            self.lora_B = nn.Parameter(
-                torch.zeros((self.out_features, r), device=device)
-            )
-            self.scaling = lora_alpha / r
-            self.lora_dropout = lora_dropout
-            self.lora_enabled = True
-            nn.init.kaiming_uniform_(self.lora_A, a=5**0.5)
-            nn.init.zeros_(self.lora_B)
-            self._packed_params.requires_grad_(False)
-
-        def forward(self, x: Tensor) -> Tensor:
-            if self._packed_params.dtype == torch.qint8:
-                if self.version is None or self.version < 4:
-                    Y = torch.ops.quantized.linear_dynamic(
-                        x, self._packed_params._packed_params
-                    )
-                else:
-                    Y = torch.ops.quantized.linear_dynamic(
-                        x, self._packed_params._packed_params, reduce_range=True
-                    )
-            elif self._packed_params.dtype == torch.float16:
-                Y = torch.ops.quantized.linear_dynamic_fp16(
-                    x, self._packed_params._packed_params
-                )
-            else:
-                raise RuntimeError("Unsupported dtype on dynamic quantized linear!")
-            result = Y.to(x.dtype)
-            if self.lora_enabled and isinstance(self.lora_dropout, float):
-                result += (
-                    nn.functional.dropout(x, self.lora_dropout, self.training)
-                    @ self.lora_A.transpose(0, 1)
-                    @ self.lora_B.transpose(0, 1)
-                ) * self.scaling
-            return result
-
-        @classmethod
-        def from_float(
-            cls, mod: Linear, use_precomputed_fake_quant: bool = False
-        ) -> Self:
-            assert hasattr(
-                mod, "qconfig"
-            ), "Input float module must have qconfig defined"
-            if use_precomputed_fake_quant:
-                warnings.warn("Fake quantize operator is not implemented.")
-            if mod.qconfig is not None and mod.qconfig.weight is not None:
-                weight_observer = mod.qconfig.weight()
-            else:
-                weight_observer = default_dynamic_qconfig.weight()
-            dtype = weight_observer.dtype
-            assert dtype in [torch.qint8, torch.float16], (
-                "The only supported dtypes for "
-                f"dynamic quantized linear are qint8 and float16 got: {dtype}"
-            )
-            weight_observer(mod.weight)
-            if dtype == torch.qint8:
-                qweight = _quantize_weight(mod.weight.float(), weight_observer)
-            elif dtype == torch.float16:
-                qweight = mod.weight.float()
-            else:
-                raise RuntimeError(
-                    "Unsupported dtype specified for dynamic quantized Linear!"
-                )
-            qlinear = cls(mod.in_features, mod.out_features, dtype=dtype)
-            qlinear.set_weight_bias(qweight, mod.bias)
-            if mod.lora_enabled:
-                qlinear.lora_enabled = True
-                qlinear.lora_A = nn.Parameter(mod.lora_A.clone().detach_())
-                qlinear.lora_B = nn.Parameter(mod.lora_B.clone().detach_())
-                qlinear.scaling = deepcopy(mod.scaling)
-                qlinear.lora_dropout = deepcopy(mod.lora_dropout)
-            return qlinear
-
-        @classmethod
-        def from_reference(cls, ref_qlinear: Self) -> Self:
-            qlinear = cls(
-                ref_qlinear.in_features,
-                ref_qlinear.out_features,
-                dtype=ref_qlinear.weight_dtype,
-            )
-            qweight = ref_qlinear.get_quantized_weight()
-            bias = ref_qlinear.bias
-            qlinear.set_weight_bias(qweight, bias)
-            if ref_qlinear.lora_enabled:
-                qlinear.lora_enabled = True
-                qlinear.lora_A = nn.Parameter(ref_qlinear.lora_A.clone().detach_())
-                qlinear.lora_B = nn.Parameter(ref_qlinear.lora_B.clone().detach_())
-                qlinear.scaling = deepcopy(ref_qlinear.scaling)
-                qlinear.lora_dropout = deepcopy(ref_qlinear.lora_dropout)
-            return qlinear
-
-    mapping = deepcopy(quantization.DEFAULT_DYNAMIC_QUANT_MODULE_MAPPINGS)
-    mapping[Linear] = QuantisedLinear
-    quantised_model = quantization.quantize_dynamic(
-        model, {nn.Linear, Linear}, torch.qint8, mapping
-    )
-    return quantised_model
-
-
 def quantise_model_(model: ChemBFN) -> None:
     """
     In-place dynamic quantisation of the trained model to `int8` data type. \n
-    Due to some limitations of `torchao` module, it is slower than method previded by `torch.ao`.
+    Due to some limitations of `torchao` module, not all layers will be quantised.
 
     :param model: trained ChemBFN model
     :type model: bayesianflow_for_chem.model.ChemBFN
@@ -548,6 +398,30 @@ def quantise_model_(model: ChemBFN) -> None:
     )
 
     quantize_(model, Int8DynamicActivationInt8WeightConfig())
+
+
+def build_uv_vis_sepctrum(
+    etoscs: np.ndarray, etenergies: np.ndarray, lambdas: np.ndarray
+) -> np.ndarray:
+    """
+    Build UV/Vis spectrum from calculated electron transtion energies and oscillator strengths. \n
+    This function follows the GaussView style: https://gaussian.com/uvvisplot/.
+
+    :param etoscs: oscillator strengths
+    :param etenergies: transtion energies
+    :param lambdas: wavelengths
+    :type etoscs: numpy.ndarray
+    :type etenergies: numpy.ndarray
+    :type lambdas: numpy.ndarray
+    :return: absorption coefficient corrospending to the wavelengths
+    :rtype: numpy.ndarray
+    """
+    return (
+        etoscs[:, None]
+        * np.exp(
+            -np.pow((1 / lambdas[None, :] - etenergies[:, None] / 45.5634) * 3099.6, 2)
+        )
+    ).sum(0) * 40489.99421
 
 
 class GeometryConverter:
@@ -566,7 +440,7 @@ class GeometryConverter:
     @staticmethod
     def smiles2cartesian(
         smiles: str,
-        num_conformers: int = 50,
+        num_conformers: int = 250,
         rdkit_ff_type: str = "MMFF",
         refine_with_crest: bool = False,
         spin: float = 0.0,
