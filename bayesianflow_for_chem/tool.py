@@ -400,7 +400,7 @@ def quantise_model_(model: ChemBFN) -> None:
     quantize_(model, Int8DynamicActivationInt8WeightConfig())
 
 
-def build_uv_vis_sepctrum(
+def build_uv_vis_spectrum(
     etoscs: np.ndarray, etenergies: np.ndarray, lambdas: np.ndarray
 ) -> np.ndarray:
     """
