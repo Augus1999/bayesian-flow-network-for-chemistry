@@ -1,0 +1,16 @@
+# model hyperparameters
+
+[ChemBFN]
+num_vocab = "match vocabulary size"  # or set to a specific integer
+channel = 512
+num_layer = 12
+num_head = 8
+dropout = 0.01
+base_model = []  # specify a base model checkpoint file in absolute path when necessary
+#                  format ["basemodel.pt", "lora.pt" (optional)]
+
+# Reomve this table if MLP is not needed.
+[MLP]
+size = [3, 256, 512]
+class_input = false  # set to true if the inputs are class indices
+base_model = ""  # specify a base model checkpoint in absolute path when necessary

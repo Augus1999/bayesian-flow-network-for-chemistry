@@ -1,0 +1,42 @@
+# runtime configurations
+
+device = "auto"  # or any device supportrd by PyTorch, e.g., "cpu", "cuda:0"
+run_name = "qm9"
+
+[tokeniser]
+name = "SMILES"  # other choices are "SAFE", "FASTA" and "SELFIES"
+vocab = "default"  # it should be a vocabulary file name in absolute path only if name = "SELFIES"
+
+# remove this table if training is unnecessary
+[train]
+epoch = 100
+batch_size = 512
+semi_autoregressive = false
+enable_lora = false
+restart = ""  # or a checkpoint file in absolute path
+dataset = "home/user/project/dataset/qm9.csv"
+molecule_tag = "smiles"
+objective_tag = ["homo", "lumo", "gap"]  # set to empty array [] if it is not needed
+enforce_validity = true  # must be false if SMILES is not used
+logger_name = "wandb"  # or "csv", "tensorboard"
+logger_path = "home/user/project/logs"
+checkpoint_save_path = "home/user/project/ckpt"
+train_strategy = "auto"  # or any strategy supported by Lightning, e.g., "ddp"
+accumulate_grad_batches = 1
+enable_progress_bar = false
+
+# Remove this table if inference is unnecessary
+[inference]
+mini_batch_size = 50
+sequence_length = "match dataset"  # must be an integer in an inference-only job
+sample_size = 1000  # the minimum number of samples you want
+sample_step = 100
+sample_method = "ODE:0.5"  # ODE-solver with temperature of 0.5; another choice is "BFN"
+semi_autoregressive = false
+guidance_objective = [-0.023, 0.09, 0.113]  # if no objective is needed set it to empty array []
+guidance_objective_strength = 4.0  # unnecessary if guidance_objective = []
+guidance_scaffold = "c1ccccc1"  # if no scaffold is used set it to empty string ""
+unwanted_token = []
+exclude_invalid = true  # to only store valid samples
+exclude_duplicate = true  # to only store unique samples
+result_file = "home/user/project/result/result.csv"

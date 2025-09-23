@@ -36,7 +36,7 @@ setup(
     author="Nianze A. Tao",
     author_email="tao-nianze@hiroshima-u.ac.jp",
     packages=find_packages(),
-    python_requires=">=3.9",
+    python_requires=">=3.11",
     install_requires=[
         "rdkit>=2025.3.5",
         "torch>=2.8.0",
@@ -46,7 +46,6 @@ setup(
         "loralib>=0.1.2",
         "lightning>=2.5.3",
         "scikit-learn>=1.7.1",
-        "typing_extensions>=4.14.1",
     ],
     project_urls={
         "Source": "https://github.com/Augus1999/bayesian-flow-network-for-chemistry"
@@ -64,6 +63,7 @@ setup(
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
     keywords=["Chemistry", "CLM", "ChemBFN"],
+    entry_points={"console_scripts": ["madmol=bayesianflow_for_chem:main"]},
 )
 
 if os.path.exists("build"):

@@ -400,28 +400,20 @@ def quantise_model_(model: ChemBFN) -> None:
     quantize_(model, Int8DynamicActivationInt8WeightConfig())
 
 
-def build_uv_vis_spectrum(
-    etoscs: np.ndarray, etenergies: np.ndarray, lambdas: np.ndarray
-) -> np.ndarray:
+def adjust_lora_(model: ChemBFN, lora_scale: float = 1.0) -> None:
     """
-    Build UV/Vis spectrum from calculated electron transtion energies and oscillator strengths. \n
-    This function follows the GaussView style: https://gaussian.com/uvvisplot/.
+    In-place adjust LoRA scaling parameter.
 
-    :param etoscs: oscillator strengths
-    :param etenergies: transtion energies
-    :param lambdas: wavelengths
-    :type etoscs: numpy.ndarray
-    :type etenergies: numpy.ndarray
-    :type lambdas: numpy.ndarray
-    :return: absorption coefficient corrospending to the wavelengths
-    :rtype: numpy.ndarray
+    :param model: trained ChemBFN model
+    :param lora_scale: LoRA scaling multiplier; setting a value smaller than 1 to decrease LoRA control
+    :type model: bayesianflow_for_chem.model.ChemBFN
+    :type lora_scale: float
+    :return:
+    :rtype: None
     """
-    return (
-        etoscs[:, None]
-        * np.exp(
-            -np.pow((1 / lambdas[None, :] - etenergies[:, None] / 45.5634) * 3099.6, 2)
-        )
-    ).sum(0) * 40489.99421
+    for module in model.modules():
+        if hasattr(module, "lora_A"):
+            module.scaling = module.scaling * lora_scale
 
 
 class GeometryConverter:
