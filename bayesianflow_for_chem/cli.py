@@ -78,6 +78,7 @@ epoch = 100
 batch_size = 512
 semi_autoregressive = false
 enable_lora = false
+dynamic_padding = false  # only set to true when pretraining a model
 restart = ""  # or a checkpoint file in absolute path
 dataset = "home/user/project/dataset/qm9.csv"
 molecule_tag = "smiles"
@@ -107,13 +108,24 @@ exclude_duplicate = true  # to only store unique samples
 result_file = "home/user/project/result/result.csv"
 """
 
+_MESSAGE = r"""
+madmadmadmadmadmadmadmadmadmadmadmadmadmadmad
+  __  __    __    ____  __  __  _____  __     
+ (  \/  )  /__\  (  _ \(  \/  )(  _  )(  )    
+  )    (  /(__)\  )(_) ))    (  )(_)(  )(__   
+ (_/\/\_)(__)(__)(____/(_/\/\_)(_____)(____) 
+                 Version {}
+madmadmadmadmadmadmadmadmadmadmadmadmadmadmad
+"""
+
 
 def parse_cli(version: str) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="MadMol: a CLI molecular design tool for "
+        description="Madmol: a CLI molecular design tool for "
         "de novo design and R-group replacement, "
-        "based on generative route of ChemBFN method.",
-        epilog=f"MadMol {version}, developed in Hiroshima University",
+        "based on generative route of ChemBFN method. "
+        "Let's make some craziest molecules.",
+        epilog=f"Madmol {version}, developed in Hiroshima University",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -289,6 +301,7 @@ def main_script(version: str) -> None:
         return
     if flag_critical != 0:
         raise RuntimeError
+    print(_MESSAGE.format(version))
     # ####### build tokeniser #######
     tokeniser_config = runtime_config["tokeniser"]
     tokeniser_name = tokeniser_config["name"].lower()
@@ -369,7 +382,6 @@ def main_script(version: str) -> None:
             _mol = ".".join([i[j] for j in mol_idx])
             _data_len.append(tokeniser(_mol).shape[-1])
         lmax = max(_data_len)
-        print(f"maximum sequence length: {lmax}")
         dataset = CSVData(dataset_file)
         dataset.map(
             partial(_encode, mol_tag=mol_tag, obj_tag=obj_tag, tokeniser=tokeniser)
@@ -420,12 +432,13 @@ def main_script(version: str) -> None:
         )
         # ####### build model #######
         if runtime_config["train"]["enable_lora"]:
-            bfn.enable_lora(model_config["ChemBFN"]["channel"] // 128)
+            bfn.enable_lora(bfn.hparam["channel"] // 128)
         model = Model(bfn, mlp, scorer)
         model.model.semi_autoregressive = runtime_config["train"]["semi_autoregressive"]
         # ####### strat training #######
         os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
-        os.environ["MAX_PADDING_LENGTH"] = f"{lmax}"  # important!
+        if not runtime_config["train"]["dynamic_padding"]:
+            os.environ["MAX_PADDING_LENGTH"] = f"{lmax}"  # important!
         torch.set_float32_matmul_precision("medium")
         trainer.fit(
             model,
@@ -442,7 +455,9 @@ def main_script(version: str) -> None:
             "padding_index": 0,
             "start_index": 1,
             "end_index": 2,
-            "padding_strategy": "static",
+            "padding_strategy": (
+                "dynamic" if runtime_config["train"]["dynamic_padding"] else "static"
+            ),
             "padding_length": lmax,
             "label": obj_tag,
             "name": runtime_config["run_name"],

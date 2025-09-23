@@ -13,6 +13,7 @@ epoch = 100
 batch_size = 512
 semi_autoregressive = false
 enable_lora = false
+dynamic_padding = false  # only set to true when pretraining a model
 restart = ""  # or a checkpoint file in absolute path
 dataset = "home/user/project/dataset/qm9.csv"
 molecule_tag = "smiles"
