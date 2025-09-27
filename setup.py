@@ -6,20 +6,34 @@ from pathlib import Path
 from shutil import rmtree
 from setuptools import setup, find_packages
 
-init_file = Path("bayesianflow_for_chem") / "__init__.py"
+source_path = Path("bayesianflow_for_chem")
 
-with open(init_file, mode="r", encoding="utf-8") as f:
+with open(source_path / "__init__.py", mode="r", encoding="utf-8") as f:
     lines = f.readlines()
-    for line in lines:
-        if "__version__" in line:
-            version = re.findall(r"[0-9]+\.[0-9]+\.[0-9]+", line)
-            if len(version) != 0:
-                version = version[0]
-                print("version:", version)
-                break
+for line in lines:
+    if "__version__" in line:
+        version = re.findall(r"[0-9]+\.[0-9]+\.[0-9]+", line)
+        if len(version) != 0:
+            version = version[0]
+            print("version:", version)
+            break
+with open(source_path / "data.py", mode="r", encoding="utf-8") as f:
+    lines = f.readlines()
+for i, line in enumerate(lines):
+    if "class CSVData(Dataset):" in line:
+        break
 
 with open("README.md", mode="r", encoding="utf-8") as fh:
     long_description = fh.read()
+
+long_description = long_description.replace(
+    r"(./example)",
+    r"(https://github.com/Augus1999/bayesian-flow-network-for-chemistry/tree/main/example)",
+)
+long_description = long_description.replace(
+    r"(./bayesianflow_for_chem/data.py)",
+    rf"(https://github.com/Augus1999/bayesian-flow-network-for-chemistry/blob/main/bayesianflow_for_chem/data.py#L{i + 1})",
+)
 
 setup(
     name="bayesianflow_for_chem",
