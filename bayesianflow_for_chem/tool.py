@@ -411,9 +411,38 @@ def adjust_lora_(model: ChemBFN, lora_scale: float = 1.0) -> None:
     :return:
     :rtype: None
     """
+    if not model.lora_enabled:
+        return
     for module in model.modules():
         if hasattr(module, "lora_A"):
             module.scaling = module.scaling * lora_scale
+
+
+def merge_lora_(model: ChemBFN) -> None:
+    """
+    In-place merge LoRA parameters into base-model. \n
+    This function does not work on a quantised model.
+
+    :param model: trained ChemBFN model
+    :type model: bayesianflow_for_chem.model.ChemBFN
+    :return:
+    :rtype: None
+    """
+    if not model.lora_enabled:
+        return
+    for module in model.modules():
+        if hasattr(module, "lora_A"):
+            try:
+                module.weight.data += (module.lora_B @ module.lora_A) * module.scaling
+                module.lora_enabled = False
+                module.lora_A = None
+                module.lora_B = None
+                module.scaling = None
+                module.lora_dropout = None
+            except NotImplementedError:
+                warnings.warn("Cannot merge LoRA parameters into quantised model.")
+                return
+    model.lora_enabled = False
 
 
 class GeometryConverter:

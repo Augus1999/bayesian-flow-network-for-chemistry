@@ -12,10 +12,79 @@ from torch import Tensor
 from torch.nn.functional import softmax, linear, dropout
 
 
+class MLP(nn.Module):
+    def __init__(
+        self, size: List[int], class_input: bool = False, dropout: float = 0.0
+    ) -> None:
+        """
+        MLP module.
+        e.g.
+
+        ```python
+        mlp = MLP(size=[512, 256, 1])
+        mlp = MLP(size=[10, 256, 512], True)  # embedding 10 classes
+        ```
+
+        :param size: hidden feature sizes
+        :param class_input: whether the input is class indices
+        :param dropout: dropout frequency
+        :type size: list
+        :type class_input: bool
+        :type dropout: float
+        """
+        super().__init__()
+        assert len(size) >= 2
+        self.class_input = class_input
+        self.dropout = nn.Dropout(dropout if not class_input else 0.0)
+        self.layers = nn.ModuleList(
+            [nn.Linear(i, size[key + 1]) for key, i in enumerate(size[:-2])]
+        )
+        if class_input:
+            self.layers[0] = nn.Embedding(size[0], size[1])
+        self.layers.append(nn.Linear(size[-2], size[-1]))
+        self.hparam = dict(size=size, class_input=class_input, dropout=dropout)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        :param x: input tensor;  shape: (n_b, n_input)
+        :return: output tensor;  shape: (n_b, n_output) if not class_input;
+                                        (n_b, 1, n_output) if class_input
+        :type x: torch.Tensor
+        :rtype: torch.Tensor
+        """
+        x = self.dropout(x)
+        if self.class_input:
+            x = x.to(dtype=torch.long)
+        for layer in self.layers[:-1]:
+            x = torch.selu(layer.forward(x))
+        return self.layers[-1](x)
+
+    @classmethod
+    def from_checkpoint(cls, ckpt: Union[str, Path], strict: bool = True) -> Self:
+        """
+        Load model weight from a checkpoint.
+
+        :param ckpt: checkpoint file
+        :param strict: whether to strictly match `state_dict`
+        :type ckpt: str | pathlib.Path
+        :type strict: bool
+        :return: MLP
+        :rtype: bayesianflow_for_chem.model.MLP
+        """
+        with open(ckpt, "rb") as f:
+            state = torch.load(f, "cpu", weights_only=True)
+        nn, hparam = state["nn"], state["hparam"]
+        model = cls(**hparam)
+        model.load_state_dict(nn, strict)
+        return model
+
+
 class Linear(nn.Linear):
     # Modified from https://github.com/microsoft/LoRA/blob/main/loralib/layers.py
     # We made it simpler and compatible with both `loralib` and `TorchScript`.
-    def __init__(self, in_features: int, out_features: int, bias: bool = True, **kargs):
+    def __init__(
+        self, in_features: int, out_features: int, bias: bool = True, **kargs
+    ) -> None:
         """
         LoRA implemented in a dense layer.
 
@@ -383,7 +452,8 @@ class ChemBFN(nn.Module):
         self, r: int = 4, lora_alpha: int = 1, lora_dropout: float = 0.0
     ) -> None:
         """
-        Enable LoRA parameters.
+        Enable LoRA parameters. \n
+        Warning: If the LoRA parameters already exist, all these parameters will be reset to default values.
 
         :param r: rank
         :param lora_alpha: LoRA alpha value
@@ -431,6 +501,9 @@ class ChemBFN(nn.Module):
             attn_mask = torch.tril(
                 torch.ones((1, n_b, n_t, n_t), device=x.device), diagonal=0
             )
+            if mask is not None:
+                attn_mask += mask.transpose(-2, -1).repeat(1, n_t, 1)[None, ...]
+                attn_mask = attn_mask == 2
         elif mask is not None:
             attn_mask = mask.transpose(-2, -1).repeat(1, n_t, 1)[None, ...] != 0
         else:
@@ -807,14 +880,21 @@ class ChemBFN(nn.Module):
             p = p.masked_fill_(token_mask, 0.0)
         return torch.argmax(p, -1), entropy
 
-    def inference(self, x: Tensor, mlp: nn.Module) -> Tensor:
+    def inference(
+        self, x: Tensor, mlp: MLP, embed_fn: Optional[Callable[[Tensor], Tensor]] = None
+    ) -> Tensor:
         """
-        Predict from SMILES tokens.
+        Predict activity/property from molecular tokens.
 
         :param x: input tokens;  shape: (n_b, n_t)
-        :param mlp: MLP module
+        :param mlp: MLP model
+        :param embed_fn: function that defines customised behaviour of molecular embedding extraction; \n
+                         this function should take an input latent tensor and output an embedding vector;
+                         default `None`
+
         :type x: torch.Tensor
-        :type mlp: torch.nn.Module
+        :type mlp: bayesianflow_for_chem.model.MLP
+        :type embed_fn: callable | None
         :return: output values;  shape: (n_b, n_task)
         :rtype: torch.Tensor
         """
@@ -822,9 +902,13 @@ class ChemBFN(nn.Module):
         mask = (x != 0).float()[..., None]
         theta = 2 * torch.nn.functional.one_hot(x, self.K).float() - 1
         z = self.forward(theta, t, mask, None)
-        if self.semi_autoregressive:
-            return mlp.forward(z[x == 2].view(z.shape[0], -1))
-        return mlp.forward(z[::, 0])
+        if embed_fn is None:
+            mb = (
+                z[x == 2].view(z.shape[0], -1) if self.semi_autoregressive else z[::, 0]
+            )
+        else:
+            mb = embed_fn(z)
+        return mlp.forward(mb)
 
     @classmethod
     def from_checkpoint(
@@ -851,73 +935,6 @@ class ChemBFN(nn.Module):
             lora_nn, lora_param = lora_state["lora_nn"], lora_state["lora_param"]
             model.enable_lora(**lora_param)
             model.load_state_dict(lora_nn, False)
-        return model
-
-
-class MLP(nn.Module):
-    def __init__(
-        self, size: List[int], class_input: bool = False, dropout: float = 0.0
-    ) -> None:
-        """
-        MLP module.
-        e.g.
-
-        ```python
-        mlp = MLP(size=[512, 256, 1])
-        mlp = MLP(size=[10, 256, 512], True)  # embedding 10 classes
-        ```
-
-        :param size: hidden feature sizes
-        :param class_input: whether the input is class indices
-        :param dropout: dropout frequency
-        :type size: list
-        :type class_input: bool
-        :type dropout: float
-        """
-        super().__init__()
-        assert len(size) >= 2
-        self.class_input = class_input
-        self.dropout = nn.Dropout(dropout if not class_input else 0.0)
-        self.layers = nn.ModuleList(
-            [nn.Linear(i, size[key + 1]) for key, i in enumerate(size[:-2])]
-        )
-        if class_input:
-            self.layers[0] = nn.Embedding(size[0], size[1])
-        self.layers.append(nn.Linear(size[-2], size[-1]))
-        self.hparam = dict(size=size, class_input=class_input, dropout=dropout)
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        :param x: input tensor;  shape: (n_b, n_input)
-        :return: output tensor;  shape: (n_b, n_output) if not class_input;
-                                        (n_b, 1, n_output) if class_input
-        :type x: torch.Tensor
-        :rtype: torch.Tensor
-        """
-        x = self.dropout(x)
-        if self.class_input:
-            x = x.to(dtype=torch.long)
-        for layer in self.layers[:-1]:
-            x = torch.selu(layer.forward(x))
-        return self.layers[-1](x)
-
-    @classmethod
-    def from_checkpoint(cls, ckpt: Union[str, Path], strict: bool = True) -> Self:
-        """
-        Load model weight from a checkpoint.
-
-        :param ckpt: checkpoint file
-        :param strict: whether to strictly match `state_dict`
-        :type ckpt: str | pathlib.Path
-        :type strict: bool
-        :return: MLP
-        :rtype: bayesianflow_for_chem.model.MLP
-        """
-        with open(ckpt, "rb") as f:
-            state = torch.load(f, "cpu", weights_only=True)
-        nn, hparam = state["nn"], state["hparam"]
-        model = cls(**hparam)
-        model.load_state_dict(nn, strict)
         return model
 
 

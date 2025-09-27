@@ -17,9 +17,15 @@ __all__ = [
     "MLP",
     "EnsembleChemBFN",
 ]
-__version__ = "2.0.1"
+__version__ = "2.0.2"
 __author__ = "Nianze A. Tao (Omozawa Sueno)"
 
 
 def main() -> None:
+    """
+    CLI main function.
+
+    :return:
+    :rtype: None
+    """
     main_script(__version__)

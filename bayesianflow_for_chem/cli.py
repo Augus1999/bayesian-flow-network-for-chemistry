@@ -120,6 +120,14 @@ madmadmadmadmadmadmadmadmadmadmadmadmadmadmad
 
 
 def parse_cli(version: str) -> argparse.Namespace:
+    """
+    Get the arguments.
+
+    :param version: package version
+    :type version: str
+    :return: arguments
+    :rtype: argpares.Namespace
+    """
     parser = argparse.ArgumentParser(
         description="Madmol: a CLI molecular design tool for "
         "de novo design and R-group replacement, "
@@ -150,13 +158,23 @@ def parse_cli(version: str) -> argparse.Namespace:
         action="store_true",
         help="dry-run to check the configurations",
     )
-    parser.add_argument("-V", "--version", action="version", version=f"{version}.")
+    parser.add_argument("-V", "--version", action="version", version=version)
     return parser.parse_args()
 
 
 def load_model_config(
     config_file: Union[str, Path],
 ) -> Tuple[Dict[str, Dict], int, int]:
+    """
+    Load the model configurations from a .toml file and check the settings.
+
+    :param config_file: configuration file name <file>
+    :type config_file: str | pathlib.Path
+    :return: a `dict` containing model hyperparameters \n
+             critical flag number: a value > 0 means critical error happened \n
+             warning flag number: a value > 0 means minor error found
+    :rtype: tuple
+    """
     flag_critical, flag_warning = 0, 0
     with open(config_file, "rb") as f:
         model_config = tomllib.load(f)
@@ -193,6 +211,16 @@ def load_model_config(
 def load_runtime_config(
     config_file: Union[str, Path],
 ) -> Tuple[Dict[str, Dict], int, int]:
+    """
+    Load the runtime configurations from a .toml file and check the settings.
+
+    :param config_file: configuration file name <file>
+    :type config_file: str | pathlib.Path
+    :return: a `dict` containing job settings \n
+             critical flag number: a value > 0 means critical error happened \n
+             warning flag number: a value > 0 means minor error found
+    :rtype: tuple
+    """
     flag_critical, flag_warning = 0, 0
     with open(config_file, "rb") as f:
         config = tomllib.load(f)
@@ -261,6 +289,14 @@ def _encode(
 
 
 def main_script(version: str) -> None:
+    """
+    Wrap the workflow.
+
+    :param version: package version
+    :type version: str
+    :return:
+    :rtype: None
+    """
     parser = parse_cli(version)
     model_config, flag_c_model, flag_w_model = load_model_config(parser.model_config)
     runtime_config, flag_c_runtime, flag_w_runtime = load_runtime_config(parser.config)

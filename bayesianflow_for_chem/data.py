@@ -150,7 +150,7 @@ def collate(batch: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
 
 
 class CSVData(Dataset):
-    def __init__(self, file: Union[str, Path]):
+    def __init__(self, file: Union[str, Path]) -> None:
         """
         Define dataset stored in CSV file.
 
