@@ -180,14 +180,16 @@ def load_model_config(
         model_config = tomllib.load(f)
     if model_config["ChemBFN"]["num_vocab"] != "match vocabulary size":
         if not isinstance(model_config["ChemBFN"]["num_vocab"], int):
-            print(f"Critical in {config_file}: You must specify num_vocab.")
+            print(
+                f"\033[0;31mCritical\033[0;0m in {config_file}: You must specify num_vocab."
+            )
             flag_critical += 1
     if model_config["ChemBFN"]["base_model"]:
         model_file = model_config["ChemBFN"]["base_model"]
         for fn in model_file:
             if not os.path.exists(fn):
                 print(
-                    f"Critical in {config_file}: Base model file {fn} does not exist."
+                    f"\033[0;31mCritical\033[0;0m in {config_file}: Base model file {fn} does not exist."
                 )
                 flag_critical += 1
     if "MLP" in model_config:
@@ -195,14 +197,14 @@ def load_model_config(
         b = model_config["MLP"]["size"][-1]
         if a != b:
             print(
-                f"Critical in {config_file}: MLP hidden size {b} should match ChemBFN hidden size {a}."
+                f"\033[0;31mCritical\033[0;0m in {config_file}: MLP hidden size {b} should match ChemBFN hidden size {a}."
             )
             flag_critical += 1
         if model_config["MLP"]["base_model"]:
             model_file = model_config["MLP"]["base_model"]
             if not os.path.exists(model_file):
                 print(
-                    f"Critical in {config_file}: Base model file {fn} does not exist."
+                    f"\033[0;31mCritical\033[0;0m in {config_file}: Base model file {fn} does not exist."
                 )
                 flag_critical += 1
     return model_config, flag_critical, flag_warning
@@ -226,49 +228,61 @@ def load_runtime_config(
         config = tomllib.load(f)
     tokeniser_name = config["tokeniser"]["name"].lower()
     if not tokeniser_name in "smiles selfies safe fasta".split():
-        print(f"Critical in {config_file}: Unknown tokensier name: {tokeniser_name}.")
+        print(
+            f"\033[0;31mCritical\033[0;0m in {config_file}: Unknown tokensier name: {tokeniser_name}."
+        )
         flag_critical += 1
     if tokeniser_name == "selfies":
         vocab = config["tokeniser"]["vocab"]
         if vocab.lower() == "default":
-            print(f"Critical in {config_file}: You should specify a vocabulary file.")
+            print(
+                f"\033[0;31mCritical\033[0;0m in {config_file}: You should specify a vocabulary file."
+            )
             flag_critical += 1
         elif not os.path.exists(vocab):
-            print(f"Critical in {config_file}: Vocabulary file {vocab} does not exist.")
+            print(
+                f"\033[0;31mCritical\033[0;0m in {config_file}: Vocabulary file {vocab} does not exist."
+            )
             flag_critical += 1
     if "train" in config:
         dataset_file = config["train"]["dataset"]
         if not os.path.exists(dataset_file):
             print(
-                f"Critical in {config_file}: Dataset file {dataset_file} does not exist."
+                f"\033[0;31mCritical\033[0;0m in {config_file}: Dataset file {dataset_file} does not exist."
             )
             flag_critical += 1
         logger_name = config["train"]["logger_name"].lower()
         if not logger_name in "csv tensorboard wandb".split():
-            print(f"Critical in {config_file}: Unknown logger: {logger_name}.")
+            print(
+                f"\033[0;31mCritical\033[0;0m in {config_file}: Unknown logger: {logger_name}."
+            )
             flag_critical += 1
         if config["train"]["restart"]:
             ckpt_file = config["train"]["restart"]
             if not os.path.exists(ckpt_file):
                 print(
-                    f"Critical in {config_file}: Restart checkpoint file {ckpt_file} does not exist."
+                    f"\033[0;31mCritical\033[0;0m in {config_file}: Restart checkpoint file {ckpt_file} does not exist."
                 )
                 flag_critical += 1
     if "inference" in config:
         if not "train" in config:
             if not isinstance(config["inference"]["sequence_length"], int):
                 print(
-                    f"Critical in {config_file}: You must set an integer for sequence_length."
+                    f"\033[0;31mCritical\033[0;0m in {config_file}: You must set an integer for sequence_length."
                 )
                 flag_critical += 1
         if config["inference"]["guidance_objective"]:
             if not "guidance_objective_strength" in config["inference"]:
                 print(
-                    f"Critical in {config_file}: You need to add guidance_objective_strength."
+                    f"\033[0;31mCritical\033[0;0m in {config_file}: You need to add guidance_objective_strength."
                 )
                 flag_critical += 1
         result_dir = Path(config["inference"]["result_file"]).parent
-        assert os.path.exists(result_dir), f"directory {result_dir} does not exist."
+        if not os.path.exists(result_dir):
+            print(
+                f"\033[0;33mWarning\033[0;0m in {config_file}: Directory {result_dir} to save the result does not exist."
+            )
+            flag_warning += 1
     return config, flag_critical, flag_warning
 
 
@@ -306,7 +320,7 @@ def main_script(version: str) -> None:
         if runtime_config["train"]["enable_lora"]:
             if not model_config["ChemBFN"]["base_model"]:
                 print(
-                    f"Warning in {parser.model_config}: You should load a pretrained model first."
+                    f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained model first."
                 )
                 flag_warning += 1
         if not os.path.exists(runtime_config["train"]["checkpoint_save_path"]):
@@ -314,12 +328,12 @@ def main_script(version: str) -> None:
     else:
         if not model_config["ChemBFN"]["base_model"]:
             print(
-                f"Warning in {parser.model_config}: You should load a pretrained ChemBFN model."
+                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained ChemBFN model."
             )
             flag_warning += 1
         if not model_config["MLP"]["base_model"]:
             print(
-                f"Warning in {parser.model_config}: You should load a pretrained MLP."
+                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained MLP."
             )
             flag_warning += 1
     if "inference" in runtime_config:

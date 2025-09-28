@@ -9,6 +9,7 @@ import warnings
 from pathlib import Path
 from typing import List, Dict, Tuple, Union, Optional
 import torch
+import colorama
 import numpy as np
 from torch import cuda, Tensor, softmax
 from torch.utils.data import DataLoader
@@ -141,6 +142,7 @@ def split_dataset(
     assert file.endswith(".csv")
     assert len(split_ratio) == 3
     assert method in ("random", "scaffold")
+    colorama.just_fix_windows_console()
     with open(file, "r") as f:
         data = list(csv.reader(f))
     header = data[0]
@@ -198,6 +200,7 @@ def split_dataset(
     with open(file.replace(".csv", "_val.csv"), "w", newline="") as fva:
         writer = csv.writer(fva)
         writer.writerows([header] + val_set)
+    colorama.deinit()
 
 
 @torch.no_grad()

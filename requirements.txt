@@ -1,6 +1,7 @@
 rdkit>=2025.3.5
 torch>=2.8.0
 torchao>=0.12
+colorama>=0.4.6
 numpy>=2.3.2
 scipy>=1.16.1
 loralib>=0.1.2
