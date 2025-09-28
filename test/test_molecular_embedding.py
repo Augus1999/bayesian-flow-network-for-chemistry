@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+# Author: Nianze A. Tao (Omozawa Sueno)
+"""
+Molecular embedding vectors should not be affected by <pad> tokens.
+"""
 from functools import partial
 import torch
 from bayesianflow_for_chem import ChemBFN, MLP
