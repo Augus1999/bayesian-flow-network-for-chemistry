@@ -470,7 +470,7 @@ class GeometryConverter:
         spin: float = 0.0,
     ) -> Tuple[List[str], np.ndarray]:
         """
-        Guess the 3D geometry from SMILES string via MMFF conformer search.
+        Guess the 3D geometry from SMILES string via conformer search.
 
         :param smiles: a valid SMILES string
         :param num_conformers: number of initial conformers

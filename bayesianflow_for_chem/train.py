@@ -134,7 +134,7 @@ class Regressor(LightningModule):
         hparam: Dict[str, Union[str, int, float, bool]] = DEFAULT_REGRESSOR_HPARAM,
     ) -> None:
         """
-        A `~lightning.LightningModule` wrapper of bayesian flow network for chemistry regression model.\n
+        A `~lightning.LightningModule` wrapper of bayesian flow network for chemistry regression or classification model.\n
         This module is used in training stage only. By calling `Regressor(...).export_model(YOUR_WORK_DIR)` after training,
         the models will be saved to `YOUR_WORK_DIR/model_ft.pt` (if LoRA is enabled then `YOUR_WORK_DIR/lora.pt`)
         and `YOUR_WORK_DIR/readout.pt`.
