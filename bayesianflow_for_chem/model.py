@@ -1038,6 +1038,19 @@ class EnsembleChemBFN(ChemBFN):
         self.__delattr__("lora_enabled")
         self.__delattr__("lora_param")
         self.__delattr__("hparam")
+        # ------- merge LoRA parameters to reduce the latency -------
+        for _, v in self.models.items():
+            for module in v.modules():
+                if hasattr(module, "lora_A"):
+                    module.weight.data += (
+                        module.lora_B @ module.lora_A
+                    ) * module.scaling
+                    module.lora_enabled = False
+                    module.lora_A = None
+                    module.lora_B = None
+                    module.scaling = None
+                    module.lora_dropout = None
+            v.lora_enabled = False
 
     def construct_y(
         self, c: Union[List[Tensor], Dict[str, Tensor]]

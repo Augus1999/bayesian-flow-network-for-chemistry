@@ -130,10 +130,11 @@ def parse_cli(version: str) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         description="Madmol: a CLI molecular design tool for "
-        "de novo design and R-group replacement, "
+        "de novo design, R-group replacement, and sequence in-filling, "
         "based on generative route of ChemBFN method. "
         "Let's make some craziest molecules.",
-        epilog=f"Madmol {version}, developed in Hiroshima University",
+        epilog=f"Madmol {version}, developed in Hiroshima University by chemists for chemists. "
+        "Visit https://augus1999.github.io/bayesian-flow-network-for-chemistry/ for more details.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
