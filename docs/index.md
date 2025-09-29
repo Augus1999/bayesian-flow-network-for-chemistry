@@ -1,9 +1,8 @@
-<p align="center">
-<img src="image/social_preview.png" alt="social preview" width="650" height="auto">
-</p>
-
-
 * [Install](./section/note/install.md)
+
+* [Python API](./section/use/api.md)
+
+* [Command-line interface](./section/use/cli.md)
 
 * [Publications](./section/note/publication.md)
 
