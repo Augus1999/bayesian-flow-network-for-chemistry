@@ -36,7 +36,6 @@ run_name = "qm9"  # <-- job name
 name = "SMILES"    # <-- "SMILES", "SAFE", "FASTA" or "SELFIES"
 vocab = "default"  # <-- it should be a vocabulary file name in absolute path iff name = "SELFIES"
 
-
 [train]  # <-- remove this table if training is unnecessary
 epoch = 100
 batch_size = 512
@@ -45,8 +44,8 @@ enable_lora = false
 dynamic_padding = false                  # <-- only set to true when pretraining a model
 restart = ""                             # <-- a checkpoint file in absolute path if necessary
 dataset = "home/user/project/dataset/qm9.csv"
-molecule_tag = "smiles"
-objective_tag = ["homo", "lumo", "gap"]  # <-- set to empty array [] if the model is unconditional
+molecule_tag = "smiles"                  # <-- the header tag under which the molecules are stored
+objective_tag = ["homo", "lumo", "gap"]  # <-- the header tag(s) under which the objective values are stored; set to empty array [] if the model is unconditional
 enforce_validity = true                  # <-- no effect if SMILES or SAFE is not used
 logger_name = "wandb"                    # <-- "wandb", "csv" or "tensorboard"
 logger_path = "home/user/project/logs"
@@ -54,7 +53,6 @@ checkpoint_save_path = "home/user/project/ckpt"
 train_strategy = "auto"                  # <-- any strategy supported by Lightning, e.g., "ddp"
 accumulate_grad_batches = 1
 enable_progress_bar = false
-
 
 [inference]  # <-- Remove this table if inference is unnecessary
 mini_batch_size = 50
@@ -82,7 +80,6 @@ num_layer = 12
 num_head = 8
 dropout = 0.01
 base_model = []                      # <-- specify a base model checkpoint file in absolute path when necessary; format ["basemodel.pt", "lora.pt" (optional)]
-
 
 [MLP]  # <-- Reomve this table if MLP is not needed.
 size = [3, 256, 512]                 # <-- dimension of the vector goes as 3 --> 256 --> 512
