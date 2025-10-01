@@ -10,7 +10,7 @@
 
 
 <p float="left">
-<img src="image/icons/stand_with_ukraine.png" alt="stand with Ukraine" width="150" height="auto">
-<img src="image/icons/all_genders_are_equal.png" alt="all genders are equal" width="150" height="auto">
-<img src="image/icons/no_nazism.png" alt="no nazism" width="100" height="auto">
+<img src="image/icons/stand_with_ukraine.png" alt="stand with Ukraine" width="50" height="auto">
+<img src="image/icons/all_genders_are_equal.png" alt="all genders are equal" width="50" height="auto">
+<img src="image/icons/no_nazism.png" alt="no nazism" width="30" height="auto">
 </p>
