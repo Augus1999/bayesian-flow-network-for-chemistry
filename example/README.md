@@ -3,4 +3,4 @@
 We provide
 * [Python API](./script)
 * [Command-line interface](./cli)
-* WebUI application: _...upcoming_
+* [WebUI application](https://github.com/Augus1999/ChemBFN-WebUI)
