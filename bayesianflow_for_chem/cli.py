@@ -377,9 +377,7 @@ def main_script(version: str) -> None:
 
         def selfies2token(s):
             return torch.tensor(
-                [1]
-                + [vocab_dict.get(i, default=unknown_idx) for i in split_selfies(s)]
-                + [2],
+                [1] + [vocab_dict.get(i, unknown_idx) for i in split_selfies(s)] + [2],
                 dtype=torch.long,
             )
 
