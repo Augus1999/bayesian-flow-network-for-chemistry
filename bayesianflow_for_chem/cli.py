@@ -287,7 +287,7 @@ def load_runtime_config(
             )
             flag_warning += 1
         if (
-            config["inference"]["guidance_scafflod"] != ""
+            config["inference"]["guidance_scaffold"] != ""
             and config["inference"]["sample_template"] != ""
         ):
             print(
