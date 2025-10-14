@@ -676,7 +676,7 @@ class ChemBFN(nn.Module):
         token_mask: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor]:
         """
-        Sample from a piror distribution.
+        Sample from a uniform piror distribution.
 
         :param batch_size: batch size
         :param sequence_size: max sequence length
@@ -874,6 +874,108 @@ class ChemBFN(nn.Module):
         t_final = torch.ones((n_b, 1, 1), device=self.beta.device)
         theta = torch.softmax(z, -1)
         theta = x_onehot + (1 - mask) * theta
+        p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
+        entropy = -(p * p.log()).sum(-1).mean(-1)
+        if token_mask is not None:
+            p = p.masked_fill_(token_mask, 0.0)
+        return torch.argmax(p, -1), entropy
+
+    @torch.jit.export
+    def optimise(
+        self,
+        x: Tensor,
+        y: Optional[Tensor] = None,
+        sample_step: int = 100,
+        guidance_strength: float = 4.0,
+        token_mask: Optional[Tensor] = None,
+    ) -> Tuple[Tensor, Tensor]:
+        """
+        Optimise the template molecule (mol2mol). \n
+        This method is equivalent to sampling from a customised prior distribution.
+
+        :param x: categorical indices of template;  shape: (n_b, n_t)
+        :param y: conditioning vector;              shape: (n_b, 1, n_f) or (n_b, n_f)
+        :param sample_step: number of sampling steps
+        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param token_mask: token mask assigning unwanted token(s) with `True`;
+                                                    shape: (1, 1, n_vocab)
+        :type x: torch.Tensor
+        :type y: torch.Tensor | None
+        :type sample_step: int
+        :type guidance_strength: float
+        :type token_mask: torch.Tensor | None
+        :return: sampled token indices;             shape: (n_b, n_t) \n
+                 entropy of the tokens;             shape: (n_b)
+        :rtype: tuple
+        """
+        n_b = x.shape[0]
+        x_onehot = nn.functional.one_hot(x, self.K).float()
+        theta = nn.functional.softmax(x_onehot, -1)
+        if y is not None:
+            y = self.reshape_y(y)
+        for i in torch.linspace(1, sample_step, sample_step, device=x.device):
+            t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
+            p = self.discrete_output_distribution(theta, t, y, guidance_strength)
+            if token_mask is not None:
+                p = p.masked_fill_(token_mask, 0.0)
+            alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)
+            e_k = nn.functional.one_hot(torch.argmax(p, -1), self.K).float()
+            mu = alpha * (self.K * e_k - 1)
+            sigma = (alpha * self.K).sqrt()
+            theta = (mu + sigma * torch.randn_like(mu)).exp() * theta
+            theta = theta / theta.sum(-1, True)
+        t_final = torch.ones((n_b, 1, 1), device=x.device)
+        p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
+        entropy = -(p * p.log()).sum(-1).mean(-1)
+        if token_mask is not None:
+            p = p.masked_fill_(token_mask, 0.0)
+        return torch.argmax(p, -1), entropy
+
+    @torch.jit.export
+    def ode_optimise(
+        self,
+        x: Tensor,
+        y: Optional[Tensor] = None,
+        sample_step: int = 100,
+        guidance_strength: float = 4.0,
+        token_mask: Optional[Tensor] = None,
+        temperature: float = 0.5,
+    ) -> Tuple[Tensor, Tensor]:
+        """
+        ODE mol2mol.
+
+        :param x: categorical indices of template;  shape: (n_b, n_t)
+        :param y: conditioning vector;              shape: (n_b, 1, n_f) or (n_b, n_f)
+        :param sample_step: number of sampling steps
+        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param token_mask: token mask assigning unwanted token(s) with `True`;
+                                                    shape: (1, 1, n_vocab)
+        :param temperature: sampling temperature
+        :type x: torch.Tensor
+        :type y: torch.Tensor | None
+        :type sample_step: int
+        :type guidance_strength: float
+        :type token_mask: torch.Tensor | None
+        :type temperature: float
+        :return: sampled token indices;             shape: (n_b, n_t) \n
+                 entropy of the tokens;             shape: (n_b)
+        :rtype: tuple
+        """
+        n_b = x.shape[0]
+        z = nn.functional.one_hot(x, self.K).float()
+        if y is not None:
+            y = self.reshape_y(y)
+        for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
+            t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
+            theta = torch.softmax(z, -1)
+            beta = self.calc_beta(t + 1 / sample_step)
+            p = self.discrete_output_distribution(theta, t, y, guidance_strength)
+            if token_mask is not None:
+                p = p.masked_fill_(token_mask, 0.0)
+            u = torch.randn_like(z)
+            z = (self.K * p - 1) * beta + (self.K * beta * temperature).sqrt() * u
+        t_final = torch.ones((n_b, 1, 1), device=self.beta.device)
+        theta = torch.softmax(z, -1)
         p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
         entropy = -(p * p.log()).sum(-1).mean(-1)
         if token_mask is not None:
@@ -1247,6 +1349,71 @@ class EnsembleChemBFN(ChemBFN):
         """
         y = self.construct_y(conditions)
         return super().ode_inpaint(
+            x, y, sample_step, guidance_strength, token_mask, temperature
+        )
+
+    @torch.inference_mode()
+    def optimise(
+        self,
+        x: Tensor,
+        conditions: Union[List[Tensor], Dict[str, Tensor]],
+        sample_step: int = 100,
+        guidance_strength: float = 4.0,
+        token_mask: Optional[Tensor] = None,
+    ) -> Tuple[Tensor, Tensor]:
+        """
+        Optimise the template molecule (mol2mol). \n
+        This method is equivalent to sampling from a customised prior distribution.
+
+        :param x: categorical indices of template;  shape: (n_b, n_t)
+        :param conditions: conditioning vector;     shape: (n_b, n_c) * n_h
+        :param sample_step: number of sampling steps
+        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param token_mask: token mask assigning unwanted token(s) with `True`;
+                                                    shape: (1, 1, n_vocab)
+        :type x: torch.Tensor
+        :type y: torch.Tensor | None
+        :type sample_step: int
+        :type guidance_strength: float
+        :type token_mask: torch.Tensor | None
+        :return: sampled token indices;             shape: (n_b, n_t) \n
+                 entropy of the tokens;             shape: (n_b)
+        :rtype: tuple
+        """
+        y = self.construct_y(conditions)
+        return super().optimise(x, y, sample_step, guidance_strength, token_mask)
+
+    @torch.inference_mode()
+    def ode_optimise(
+        self,
+        x: Tensor,
+        conditions: Union[List[Tensor], Dict[str, Tensor]],
+        sample_step: int = 100,
+        guidance_strength: float = 4.0,
+        token_mask: Optional[Tensor] = None,
+        temperature: float = 0.5,
+    ) -> Tuple[Tensor, Tensor]:
+        """
+        ODE inpainting.
+
+        :param x: categorical indices of template;  shape: (n_b, n_t)
+        :param conditions: conditioning vector;     shape: (n_b, n_c) * n_h
+        :param sample_step: number of sampling steps
+        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param token_mask: token mask;              shape: (1, 1, n_vocab)
+        :param temperature: sampling temperature
+        :type x: torch.Tensor
+        :type conditions: list | dict
+        :type sample_step: int
+        :type guidance_strength: float
+        :type token_mask: torch.Tensor | None
+        :type temperature: float
+        :return: sampled token indices;             shape: (n_b, n_t) \n
+                 entropy of the tokens;             shape: (n_b)
+        :rtype: tuple
+        """
+        y = self.construct_y(conditions)
+        return super().ode_optimise(
             x, y, sample_step, guidance_strength, token_mask, temperature
         )
 

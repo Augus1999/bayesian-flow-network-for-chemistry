@@ -61,9 +61,11 @@ sample_size = 1000                          # <-- the minimum number of samples 
 sample_step = 100
 sample_method = "ODE:0.5"                   # <-- meaning ODE-solver with temperature of 0.5; another choice is "BFN"
 semi_autoregressive = false
+lora_scaling = 1.0                          # <-- adjusting the LoRA effectiveness if applied
 guidance_objective = [-0.023, 0.09, 0.113]  # <-- for unconditional jobs set it to empty array []
 guidance_objective_strength = 4.0           # <-- unnecessary if guidance_objective = []
 guidance_scaffold = "c1ccccc1"              # <-- if no scaffold is used set it to empty string ""
+sample_template = ""                        # <-- template for mol2mol task; leave it blank if scaffold is used
 unwanted_token = []
 exclude_invalid = true                      # <-- whether to only store valid samples
 exclude_duplicate = true                    # <-- whether to only store unique samples

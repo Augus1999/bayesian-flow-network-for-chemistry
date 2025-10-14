@@ -219,7 +219,7 @@ def sample(
     sort: bool = False,
 ) -> List[str]:
     """
-    Sampling.
+    Sampling molecules.
 
     :param model: trained ChemBFN model
     :param batch_size: batch size
@@ -371,6 +371,96 @@ def inpaint(
         )
     else:
         tokens, entropy = model.inpaint(
+            x, y, sample_step, guidance_strength, token_mask
+        )
+    if sort:
+        sorted_idx = entropy.argsort(stable=True)
+        tokens = tokens[sorted_idx]
+    return [
+        separator.join([vocab_keys[i] for i in j])
+        .split("<start>" + separator)[-1]
+        .split(separator + "<end>")[0]
+        .replace("<pad>", "")
+        for j in tokens
+    ]
+
+
+@torch.no_grad()
+def optimise(
+    model: Union[ChemBFN, EnsembleChemBFN],
+    x: Tensor,
+    sample_step: int = 100,
+    y: Optional[Union[Tensor, Dict[str, Tensor], List[Tensor]]] = None,
+    guidance_strength: float = 4.0,
+    device: Union[str, torch.device, None] = None,
+    vocab_keys: List[str] = VOCAB_KEYS,
+    separator: str = "",
+    method: str = "BFN",
+    allowed_tokens: Union[str, List[str]] = "all",
+    sort: bool = False,
+) -> List[str]:
+    """
+    Optimising template molecules (mol2mol).
+
+    :param model: trained ChemBFN model
+    :param x: categorical indices of template;  shape: (n_b, n_t)
+    :param sample_step: number of sampling steps
+    :param y: conditioning vector;              shape: (n_b, 1, n_f) or (n_b, n_f) \n
+              or a list/`dict` of conditions;   shape: (n_b, n_c) * n_h
+
+    :param guidance_strength: strength of conditional generation. It is not used if y is null.
+    :param device: hardware accelerator
+    :param vocab_keys: a list of (ordered) vocabulary
+    :param separator: token separator; default is `""`
+    :param method: sampling method chosen from `"ODE:x"` or `"BFN"` where `x` is the value of sampling temperature; default is `"BFN"`
+    :param allowed_tokens: a list of allowed tokens; default is `"all"`
+    :param sort: whether to sort the samples according to entropy values; default is `False`
+    :type model: bayesianflow_for_chem.model.ChemBFN | bayesianflow_for_chem.model.EnsembleChemBFN
+    :type x: torch.Tensor
+    :type sample_step: int
+    :type y: torch.Tensor | list | dict | None
+    :type guidance_strength: float
+    :type device: str | torch.device | None
+    :type vocab_keys: list
+    :type separator: str
+    :type method: str
+    :type allowed_tokens: str | list
+    :type sort: bool
+    :return: a list of generated molecular strings
+    :rtype: list
+    """
+    assert method.split(":")[0].lower() in ("ode", "bfn")
+    if isinstance(model, EnsembleChemBFN):
+        assert y is not None, "conditioning is required while using an ensemble model."
+        assert isinstance(y, list) or isinstance(y, dict)
+    else:
+        assert isinstance(y, Tensor) or y is None
+    if device is None:
+        device = _find_device()
+    model.to(device).eval()
+    x = x.to(device)
+    if y is not None:
+        if isinstance(y, Tensor):
+            y = y.to(device)
+        elif isinstance(y, list):
+            y = [i.to(device) for i in y]
+        elif isinstance(y, dict):
+            y = {k: v.to(device) for k, v in y.items()}
+        else:
+            raise NotImplementedError
+    if isinstance(allowed_tokens, list):
+        token_mask = [0 if i in allowed_tokens else 1 for i in vocab_keys]
+        token_mask = torch.tensor([[token_mask]], dtype=torch.bool).to(device)
+    else:
+        token_mask = None
+    if "ode" in method.lower():
+        tp = float(method.split(":")[-1])
+        assert tp > 0, "Sampling temperature should be higher than 0."
+        tokens, entropy = model.ode_optimise(
+            x, y, sample_step, guidance_strength, token_mask, tp
+        )
+    else:
+        tokens, entropy = model.optimise(
             x, y, sample_step, guidance_strength, token_mask
         )
     if sort:

@@ -156,7 +156,11 @@ bayesianflow_for_chem.tool.__smaple__(_model_, _batch_size_, _sequence_size_, _s
 
 bayesianflow_for_chem.tool.__inpaint__(_model_, _x_, _sample_step=100_, _y=None_, _guidance_strength=4.0_, _device=None_, _vocab_keys=VOCAB_KEYS_, _separator=""_, _method="BFN"_, _allowed_tokens="all"_, _sort=False_) &#8594; list
 
-&nbsp;&nbsp;&nbsp; Inpaint molecules.
+&nbsp;&nbsp;&nbsp; Inpaint masked molecules.
+
+bayesianflow_for_chem.tool.__optimise__(_model_, _x_, _sample_step=100_, _y=None_, _guidance_strength=4.0_, _device=None_, _vocab_keys=VOCAB_KEYS_, _separator=""_, _method="BFN"_, _allowed_tokens="all"_, _sort=False_) &#8594; list
+
+&nbsp;&nbsp;&nbsp; Optimise template molecules.
 
 bayesianflow_for_chem.tool.__quantise_model\___(_model_) &#8594; None
 

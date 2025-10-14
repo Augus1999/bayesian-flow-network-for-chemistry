@@ -32,7 +32,7 @@ from bayesianflow_for_chem.data import (
     collate,
     CSVData,
 )
-from bayesianflow_for_chem.tool import sample, inpaint
+from bayesianflow_for_chem.tool import sample, inpaint, optimise, adjust_lora_
 
 
 """
@@ -99,9 +99,11 @@ sample_size = 1000  # the minimum number of samples you want
 sample_step = 100
 sample_method = "ODE:0.5"  # ODE-solver with temperature of 0.5; another choice is "BFN"
 semi_autoregressive = false
+lora_scaling = 1.0  # LoRA scaling if applied
 guidance_objective = [-0.023, 0.09, 0.113]  # if no objective is needed set it to empty array []
 guidance_objective_strength = 4.0  # unnecessary if guidance_objective = []
 guidance_scaffold = "c1ccccc1"  # if no scaffold is used set it to empty string ""
+sample_template = ""  # template for mol2mol task; leave it blank if scaffold is used
 unwanted_token = []
 exclude_invalid = true  # to only store valid samples
 exclude_duplicate = true  # to only store unique samples
@@ -130,7 +132,7 @@ def parse_cli(version: str) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         description="Madmol: a CLI molecular design tool for "
-        "de novo design, R-group replacement, and sequence in-filling, "
+        "de novo design, R-group replacement, molecule optimisation, and sequence in-filling, "
         "based on generative route of ChemBFN method. "
         "Let's make some craziest molecules.",
         epilog=f"Madmol {version}, developed in Hiroshima University by chemists for chemists. "
@@ -157,7 +159,7 @@ def parse_cli(version: str) -> argparse.Namespace:
         "-D",
         "--dryrun",
         action="store_true",
-        help="dry-run to check the configurations",
+        help="dry-run to check the configurations and exit",
     )
     parser.add_argument("-V", "--version", action="version", version=version)
     return parser.parse_args()
@@ -282,6 +284,14 @@ def load_runtime_config(
         if not os.path.exists(result_dir):
             print(
                 f"\033[0;33mWarning\033[0;0m in {config_file}: Directory {result_dir} to save the result does not exist."
+            )
+            flag_warning += 1
+        if (
+            config["inference"]["guidance_scafflod"] != ""
+            and config["inference"]["sample_template"] != ""
+        ):
+            print(
+                f"\033[0;33mWarning\033[0;0m in {config_file}: Inpaint task or mol2mol task?"
             )
             flag_warning += 1
     return config, flag_critical, flag_warning
@@ -520,6 +530,7 @@ def main_script(version: str) -> None:
         if "train" in runtime_config:
             bfn = model.model
             mlp = model.mlp
+        lora_scaling = runtime_config["inference"].get("lora_scaling", 1.0)
         # ####### strat inference #######
         bfn.semi_autoregressive = runtime_config["inference"]["semi_autoregressive"]
         _device = (
@@ -550,8 +561,16 @@ def main_script(version: str) -> None:
                 x[:-1], (0, sequence_length - x.shape[-1] + 1), value=0
             )
             x = x[None, :].repeat(batch_size, 1)
+            # then sample template will be ignored.
+        elif runtime_config["inference"]["sample_template"]:
+            template = runtime_config["inference"]["sample_template"]
+            x = tokeniser(template)
+            x = torch.nn.functional.pad(x, (0, sequence_length - x.shape[-1]), value=0)
+            x = x[None, :].repeat(batch_size, 1)
         else:
             x = None
+        if bfn.lora_enabled:
+            adjust_lora_(bfn, lora_scaling)
         mols = []
         while len(mols) < runtime_config["inference"]["sample_size"]:
             if x is None:
@@ -567,8 +586,20 @@ def main_script(version: str) -> None:
                     method=sample_method,
                     allowed_tokens=allowed_token,
                 )
-            else:
+            elif runtime_config["inference"]["guidance_scaffold"]:
                 s = inpaint(
+                    bfn,
+                    x,
+                    sample_step,
+                    y,
+                    guidance_strength,
+                    _device,
+                    vocab_keys,
+                    method=sample_method,
+                    allowed_tokens=allowed_token,
+                )
+            else:
+                s = optimise(
                     bfn,
                     x,
                     sample_step,
