@@ -15,6 +15,7 @@ This is the repository of the PyTorch implementation of ChemBFN model.
 ChemBFN provides the state-of-the-art functionalities of
 * SMILES or SELFIES-based *de novo* molecule generation
 * Protein sequence *de novo* generation
+* Template optimisation (mol2mol)
 * Classifier-free guidance conditional generation (single or multi-objective optimisation)
 * Context-guided conditional generation (inpaint)
 * Outstanding out-of-distribution chemical space sampling
