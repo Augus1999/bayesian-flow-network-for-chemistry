@@ -1182,7 +1182,7 @@ class EnsembleChemBFN(ChemBFN):
         return softmax((1 + w) * p_cond - w * p_uncond, -1)
 
     @staticmethod
-    def reshape_y(y: Dict[str, Tensor]) -> Dict[str, Tensor]:
+    def _reshape_y(y: Dict[str, Tensor]) -> Dict[str, Tensor]:
         for k in y:
             assert y[k].dim() <= 3
             if y[k].dim() == 2:
