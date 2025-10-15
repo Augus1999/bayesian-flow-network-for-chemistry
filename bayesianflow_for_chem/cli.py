@@ -430,17 +430,18 @@ def main_script(version: str) -> None:
         dataset_file = runtime_config["train"]["dataset"]
         with open(dataset_file, "r") as db:
             _data = db.readlines()
-        header = _data[0]
-        mol_idx = []
-        for i, tag in enumerate(header.replace("\n", "").split(",")):
+        _header = _data[0]
+        _mol_idx = []
+        for i, tag in enumerate(_header.replace("\n", "").split(",")):
             if tag == mol_tag:
-                mol_idx.append(i)
+                _mol_idx.append(i)
         _data_len = []
         for i in _data[1:]:
             i = i.replace("\n", "").split(",")
-            _mol = ".".join([i[j] for j in mol_idx])
+            _mol = ".".join([i[j] for j in _mol_idx])
             _data_len.append(tokeniser(_mol).shape[-1])
         lmax = max(_data_len)
+        del _data, _data_len, _header, _mol_idx  # clear memory
         dataset = CSVData(dataset_file)
         dataset.map(
             partial(_encode, mol_tag=mol_tag, obj_tag=obj_tag, tokeniser=tokeniser)

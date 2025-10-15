@@ -659,11 +659,90 @@ class ChemBFN(nn.Module):
         return (-logits.gather(-1, x[..., :1]).squeeze(-1)).mean()
 
     @staticmethod
-    def reshape_y(y: Tensor) -> Tensor:
+    def _reshape_y(y: Tensor) -> Tensor:
         assert y.dim() <= 3  # this doesn't work if the model is frezen in JIT.
         if y.dim() == 2:
             return y[:, None, :]
         return y
+
+    def _process(
+        self,
+        theta: Tensor,
+        mask: Optional[Tuple[Tensor, Tensor]],
+        y: Optional[Tensor],
+        sample_step: int,
+        guidance_strength: float,
+        token_mask: Optional[Tensor],
+    ) -> Tuple[Tensor, Tensor]:
+        # BFN inference process.
+        #
+        # theta: piror distribution;            shape: (n_b, n_t, n_vocab)
+        # mask: masked condition distribution;  shape: (n_b, n_t, n_vocab)
+        #       condition distribution mask;    shape: (n_b, n_t, 1)
+        n_b = theta.shape[0]
+        if y is not None:
+            y = self._reshape_y(y)
+        for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
+            t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
+            p = self.discrete_output_distribution(theta, t, y, guidance_strength)
+            if token_mask is not None:
+                p = p.masked_fill_(token_mask, 0.0)
+            alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)
+            e_k = nn.functional.one_hot(torch.argmax(p, -1), self.K).float()
+            mu = alpha * (self.K * e_k - 1)
+            sigma = (alpha * self.K).sqrt()
+            theta = (mu + sigma * torch.randn_like(mu)).exp() * theta
+            theta = theta / theta.sum(-1, True)
+            if mask is not None:
+                x_onehot, x_mask = mask
+                theta = x_onehot + (1 - x_mask) * theta
+        t_final = torch.ones((n_b, 1, 1), device=self.beta.device)
+        p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
+        entropy = -(p * p.log()).sum(-1).mean(-1)
+        if token_mask is not None:
+            p = p.masked_fill_(token_mask, 0.0)
+        return torch.argmax(p, -1), entropy
+
+    def _ode_process(
+        self,
+        z: Tensor,
+        mask: Optional[Tuple[Tensor, Tensor]],
+        y: Optional[Tensor],
+        sample_step: int,
+        guidance_strength: float,
+        token_mask: Optional[Tensor],
+        temperature: float,
+    ) -> Tuple[Tensor, Tensor]:
+        # ODE-solver engaged inference process.
+        #
+        # z: prior latent vector;               shape: (n_b, n_t, n_vocab)
+        # mask: masked condition distribution;  shape: (n_b, n_t, n_vocab)
+        #       condition distribution mask;    shape: (n_b, n_t, 1)
+        n_b = z.shape[0]
+        if y is not None:
+            y = self._reshape_y(y)
+        for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
+            t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
+            theta = softmax(z, -1)
+            if mask is not None:
+                x_onehot, x_mask = mask
+                theta = x_onehot + (1 - x_mask) * theta
+            beta = self.calc_beta(t + 1 / sample_step)
+            p = self.discrete_output_distribution(theta, t, y, guidance_strength)
+            if token_mask is not None:
+                p = p.masked_fill_(token_mask, 0.0)
+            u = torch.randn_like(z)
+            z = (self.K * p - 1) * beta + (self.K * beta * temperature).sqrt() * u
+        t_final = torch.ones((n_b, 1, 1), device=self.beta.device)
+        theta = softmax(z, -1)
+        if mask is not None:
+            x_onehot, x_mask = mask
+            theta = x_onehot + (1 - x_mask) * theta
+        p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
+        entropy = -(p * p.log()).sum(-1).mean(-1)
+        if token_mask is not None:
+            p = p.masked_fill_(token_mask, 0.0)
+        return torch.argmax(p, -1), entropy
 
     @torch.jit.export
     def sample(
@@ -680,44 +759,26 @@ class ChemBFN(nn.Module):
 
         :param batch_size: batch size
         :param sequence_size: max sequence length
-        :param y: conditioning vector;      shape: (n_b, 1, n_f) or (n_b, n_f)
+        :param y: conditioning vector;   shape: (n_b, 1, n_f) or (n_b, n_f)
         :param sample_step: number of sampling steps
         :param guidance_strength: strength of conditional generation. It is not used if y is null.
         :param token_mask: token mask assigning unwanted token(s) with `True`;
-                                            shape: (1, 1, n_vocab)
+                                         shape: (1, 1, n_vocab)
         :type batch_size: int
         :type sequence_size: int
         :type y: torch.Tensor | None
         :type sample_step: int
         :type guidance_strength: float
         :type token_mask: torch.Tensor | None
-        :return: sampled token indices;     shape: (n_b, n_t) \n
-                 entropy of the tokens;     shape: (n_b)
+        :return: sampled token indices;  shape: (n_b, n_t) \n
+                 entropy of the tokens;  shape: (n_b)
         :rtype: tuple
         """
         theta = (
             torch.ones((batch_size, sequence_size, self.K), device=self.beta.device)
             / self.K
         )
-        if y is not None:
-            y = self.reshape_y(y)
-        for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
-            t = (i - 1).view(1, 1, 1).repeat(batch_size, 1, 1) / sample_step
-            p = self.discrete_output_distribution(theta, t, y, guidance_strength)
-            if token_mask is not None:
-                p = p.masked_fill_(token_mask, 0.0)
-            alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)
-            e_k = nn.functional.one_hot(torch.argmax(p, -1), self.K).float()
-            mu = alpha * (self.K * e_k - 1)
-            sigma = (alpha * self.K).sqrt()
-            theta = (mu + sigma * torch.randn_like(mu)).exp() * theta
-            theta = theta / theta.sum(-1, True)
-        t_final = torch.ones((batch_size, 1, 1), device=self.beta.device)
-        p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
-        entropy = -(p * p.log()).sum(-1).mean(-1)
-        if token_mask is not None:
-            p = p.masked_fill_(token_mask, 0.0)
-        return torch.argmax(p, -1), entropy
+        return self._process(theta, None, y, sample_step, guidance_strength, token_mask)
 
     @torch.jit.export
     def ode_sample(
@@ -735,11 +796,11 @@ class ChemBFN(nn.Module):
 
         :param batch_size: batch size
         :param sequence_size: max sequence length
-        :param y: conditioning vector;      shape: (n_b, 1, n_f) or (n_b, n_f)
+        :param y: conditioning vector;   shape: (n_b, 1, n_f) or (n_b, n_f)
         :param sample_step: number of sampling steps
         :param guidance_strength: strength of conditional generation. It is not used if y is null.
         :param token_mask: token mask assigning unwanted token(s) with `True`;
-                                            shape: (1, 1, n_vocab)
+                                         shape: (1, 1, n_vocab)
         :param temperature: sampling temperature
         :type batch_size: int
         :type sequence_size: int
@@ -748,29 +809,14 @@ class ChemBFN(nn.Module):
         :type guidance_strength: float
         :type token_mask: torch.Tensor | None
         :type temperature: float
-        :return: sampled token indices;     shape: (n_b, n_t) \n
-                 entropy of the tokens;     shape: (n_b)
+        :return: sampled token indices;  shape: (n_b, n_t) \n
+                 entropy of the tokens;  shape: (n_b)
         :rtype: tuple
         """
         z = torch.zeros((batch_size, sequence_size, self.K), device=self.beta.device)
-        if y is not None:
-            y = self.reshape_y(y)
-        for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
-            t = (i - 1).view(1, 1, 1).repeat(batch_size, 1, 1) / sample_step
-            theta = torch.softmax(z, -1)
-            beta = self.calc_beta(t + 1 / sample_step)
-            p = self.discrete_output_distribution(theta, t, y, guidance_strength)
-            if token_mask is not None:
-                p = p.masked_fill_(token_mask, 0.0)
-            u = torch.randn_like(z)
-            z = (self.K * p - 1) * beta + (self.K * beta * temperature).sqrt() * u
-        t_final = torch.ones((batch_size, 1, 1), device=self.beta.device)
-        theta = torch.softmax(z, -1)
-        p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
-        entropy = -(p * p.log()).sum(-1).mean(-1)
-        if token_mask is not None:
-            p = p.masked_fill_(token_mask, 0.0)
-        return torch.argmax(p, -1), entropy
+        return self._ode_process(
+            z, None, y, sample_step, guidance_strength, token_mask, temperature
+        )
 
     @torch.jit.export
     def inpaint(
@@ -800,30 +846,12 @@ class ChemBFN(nn.Module):
         :rtype: tuple
         """
         n_b, n_t = x.shape
-        mask = (x != 0).float()[..., None]
+        x_mask = (x != 0).float()[..., None]
         theta = torch.ones((n_b, n_t, self.K), device=x.device) / self.K
-        x_onehot = nn.functional.one_hot(x, self.K) * mask
-        theta = x_onehot + (1 - mask) * theta
-        if y is not None:
-            y = self.reshape_y(y)
-        for i in torch.linspace(1, sample_step, sample_step, device=x.device):
-            t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
-            p = self.discrete_output_distribution(theta, t, y, guidance_strength)
-            if token_mask is not None:
-                p = p.masked_fill_(token_mask, 0.0)
-            alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)
-            e_k = nn.functional.one_hot(torch.argmax(p, -1), self.K).float()
-            mu = alpha * (self.K * e_k - 1)
-            sigma = (alpha * self.K).sqrt()
-            theta = (mu + sigma * torch.randn_like(mu)).exp() * theta
-            theta = theta / theta.sum(-1, True)
-            theta = x_onehot + (1 - mask) * theta
-        t_final = torch.ones((n_b, 1, 1), device=x.device)
-        p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
-        entropy = -(p * p.log()).sum(-1).mean(-1)
-        if token_mask is not None:
-            p = p.masked_fill_(token_mask, 0.0)
-        return torch.argmax(p, -1), entropy
+        x_onehot = nn.functional.one_hot(x, self.K) * x_mask
+        theta = x_onehot + (1 - x_mask) * theta
+        mask = (x_onehot, x_mask)
+        return self._process(theta, mask, y, sample_step, guidance_strength, token_mask)
 
     @torch.jit.export
     def ode_inpaint(
@@ -856,29 +884,13 @@ class ChemBFN(nn.Module):
         :rtype: tuple
         """
         n_b, n_t = x.shape
-        mask = (x != 0).float()[..., None]
-        x_onehot = nn.functional.one_hot(x, self.K) * mask
+        x_mask = (x != 0).float()[..., None]
+        x_onehot = nn.functional.one_hot(x, self.K) * x_mask
         z = torch.zeros((n_b, n_t, self.K), device=self.beta.device)
-        if y is not None:
-            y = self.reshape_y(y)
-        for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
-            t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
-            theta = torch.softmax(z, -1)
-            theta = x_onehot + (1 - mask) * theta
-            beta = self.calc_beta(t + 1 / sample_step)
-            p = self.discrete_output_distribution(theta, t, y, guidance_strength)
-            if token_mask is not None:
-                p = p.masked_fill_(token_mask, 0.0)
-            u = torch.randn_like(z)
-            z = (self.K * p - 1) * beta + (self.K * beta * temperature).sqrt() * u
-        t_final = torch.ones((n_b, 1, 1), device=self.beta.device)
-        theta = torch.softmax(z, -1)
-        theta = x_onehot + (1 - mask) * theta
-        p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
-        entropy = -(p * p.log()).sum(-1).mean(-1)
-        if token_mask is not None:
-            p = p.masked_fill_(token_mask, 0.0)
-        return torch.argmax(p, -1), entropy
+        mask = (x_onehot, x_mask)
+        return self._ode_process(
+            z, mask, y, sample_step, guidance_strength, token_mask, temperature
+        )
 
     @torch.jit.export
     def optimise(
@@ -908,28 +920,9 @@ class ChemBFN(nn.Module):
                  entropy of the tokens;             shape: (n_b)
         :rtype: tuple
         """
-        n_b = x.shape[0]
         x_onehot = nn.functional.one_hot(x, self.K).float()
-        theta = nn.functional.softmax(x_onehot, -1)
-        if y is not None:
-            y = self.reshape_y(y)
-        for i in torch.linspace(1, sample_step, sample_step, device=x.device):
-            t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
-            p = self.discrete_output_distribution(theta, t, y, guidance_strength)
-            if token_mask is not None:
-                p = p.masked_fill_(token_mask, 0.0)
-            alpha = self.calc_discrete_alpha(t, t + 1 / sample_step)
-            e_k = nn.functional.one_hot(torch.argmax(p, -1), self.K).float()
-            mu = alpha * (self.K * e_k - 1)
-            sigma = (alpha * self.K).sqrt()
-            theta = (mu + sigma * torch.randn_like(mu)).exp() * theta
-            theta = theta / theta.sum(-1, True)
-        t_final = torch.ones((n_b, 1, 1), device=x.device)
-        p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
-        entropy = -(p * p.log()).sum(-1).mean(-1)
-        if token_mask is not None:
-            p = p.masked_fill_(token_mask, 0.0)
-        return torch.argmax(p, -1), entropy
+        theta = softmax(x_onehot, -1)
+        return self._process(theta, None, y, sample_step, guidance_strength, token_mask)
 
     @torch.jit.export
     def ode_optimise(
@@ -961,26 +954,10 @@ class ChemBFN(nn.Module):
                  entropy of the tokens;             shape: (n_b)
         :rtype: tuple
         """
-        n_b = x.shape[0]
         z = nn.functional.one_hot(x, self.K).float()
-        if y is not None:
-            y = self.reshape_y(y)
-        for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
-            t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
-            theta = torch.softmax(z, -1)
-            beta = self.calc_beta(t + 1 / sample_step)
-            p = self.discrete_output_distribution(theta, t, y, guidance_strength)
-            if token_mask is not None:
-                p = p.masked_fill_(token_mask, 0.0)
-            u = torch.randn_like(z)
-            z = (self.K * p - 1) * beta + (self.K * beta * temperature).sqrt() * u
-        t_final = torch.ones((n_b, 1, 1), device=self.beta.device)
-        theta = torch.softmax(z, -1)
-        p = self.discrete_output_distribution(theta, t_final, y, guidance_strength)
-        entropy = -(p * p.log()).sum(-1).mean(-1)
-        if token_mask is not None:
-            p = p.masked_fill_(token_mask, 0.0)
-        return torch.argmax(p, -1), entropy
+        return self._ode_process(
+            z, None, y, sample_step, guidance_strength, token_mask, temperature
+        )
 
     def inference(
         self, x: Tensor, mlp: MLP, embed_fn: Optional[Callable[[Tensor], Tensor]] = None

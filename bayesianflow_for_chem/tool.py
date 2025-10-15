@@ -9,7 +9,6 @@ import warnings
 from pathlib import Path
 from typing import List, Dict, Tuple, Union, Optional
 import torch
-import colorama
 import numpy as np
 from torch import cuda, Tensor, softmax
 from torch.utils.data import DataLoader
@@ -43,6 +42,68 @@ def _find_device() -> torch.device:
     elif torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
+
+
+def _parse_and_assert_param(
+    model: Union[ChemBFN, EnsembleChemBFN],
+    y: Optional[Union[Tensor, Dict[str, Tensor], List[Tensor]]],
+    method: str,
+) -> Optional[float]:
+    assert method.split(":")[0].lower() in ("ode", "bfn")
+    if isinstance(model, EnsembleChemBFN):
+        assert y is not None, "conditioning is required while using an ensemble model."
+        assert isinstance(y, list) or isinstance(y, dict)
+    else:
+        assert isinstance(y, Tensor) or (y is None)
+    if "ode" in method.lower():
+        tp = float(method.split(":")[-1])
+        assert tp > 0, "Sampling temperature should be higher than 0."
+        return tp
+    return None
+
+
+def _map_to_device(
+    y: Optional[Union[Tensor, Dict[str, Tensor], List[Tensor]]],
+    device: Union[str, torch.device],
+) -> Optional[Union[Tensor, Dict[str, Tensor], List[Tensor]]]:
+    if y is not None:
+        if isinstance(y, Tensor):
+            y = y.to(device)
+        elif isinstance(y, list):
+            y = [i.to(device) for i in y]
+        elif isinstance(y, dict):
+            y = {k: v.to(device) for k, v in y.items()}
+        else:
+            raise NotImplementedError
+    return y
+
+
+def _build_token_mask(
+    allowed_tokens: Union[str, List[str]],
+    vocab_keys: List[str],
+    device: Union[str, torch.tensor],
+) -> Optional[Tensor]:
+    if isinstance(allowed_tokens, list):
+        token_mask = [0 if i in allowed_tokens else 1 for i in vocab_keys]
+        token_mask = torch.tensor([[token_mask]], dtype=torch.bool).to(device)
+    else:
+        token_mask = None
+    return token_mask
+
+
+def _token_to_seq(
+    tokens: Tensor, entropy: Tensor, vocab_keys: List[str], separator: str, sort: bool
+) -> List[str]:
+    if sort:
+        sorted_idx = entropy.argsort(stable=True)
+        tokens = tokens[sorted_idx]
+    return [
+        separator.join([vocab_keys[i] for i in j])
+        .split("<start>" + separator)[-1]
+        .split(separator + "<end>")[0]
+        .replace("<pad>", "")
+        for j in tokens
+    ]
 
 
 @torch.no_grad()
@@ -142,7 +203,6 @@ def split_dataset(
     assert file.endswith(".csv")
     assert len(split_ratio) == 3
     assert method in ("random", "scaffold")
-    colorama.just_fix_windows_console()
     with open(file, "r") as f:
         data = list(csv.reader(f))
     header = data[0]
@@ -167,10 +227,8 @@ def split_dataset(
             # compute Bemis-Murcko scaffold
             if len(smiles_idx) > 1:
                 warnings.warn(
-                    "\033[32;1m"
                     f"We found {len(smiles_idx)} SMILES strings in a row!"
-                    " Only the first SMILES will be used to compute the molecular scaffold."
-                    "\033[0m",
+                    " Only the first SMILES will be used to compute the molecular scaffold.",
                     stacklevel=2,
                 )
             try:
@@ -197,10 +255,10 @@ def split_dataset(
     with open(file.replace(".csv", "_test.csv"), "w", newline="") as fte:
         writer = csv.writer(fte)
         writer.writerows([header] + test_set)
-    with open(file.replace(".csv", "_val.csv"), "w", newline="") as fva:
-        writer = csv.writer(fva)
-        writer.writerows([header] + val_set)
-    colorama.deinit()
+    if val_set:
+        with open(file.replace(".csv", "_val.csv"), "w", newline="") as fva:
+            writer = csv.writer(fva)
+            writer.writerows([header] + val_set)
 
 
 @torch.no_grad()
@@ -250,32 +308,12 @@ def sample(
     :return: a list of generated molecular strings
     :rtype: list
     """
-    assert method.split(":")[0].lower() in ("ode", "bfn")
-    if isinstance(model, EnsembleChemBFN):
-        assert y is not None, "conditioning is required while using an ensemble model."
-        assert isinstance(y, list) or isinstance(y, dict)
-    else:
-        assert isinstance(y, Tensor) or y is None
-    if device is None:
-        device = _find_device()
+    tp = _parse_and_assert_param(model, y, method)
+    device = _find_device() if device is None else device
     model.to(device).eval()
-    if y is not None:
-        if isinstance(y, Tensor):
-            y = y.to(device)
-        elif isinstance(y, list):
-            y = [i.to(device) for i in y]
-        elif isinstance(y, dict):
-            y = {k: v.to(device) for k, v in y.items()}
-        else:
-            raise NotImplementedError
-    if isinstance(allowed_tokens, list):
-        token_mask = [0 if i in allowed_tokens else 1 for i in vocab_keys]
-        token_mask = torch.tensor([[token_mask]], dtype=torch.bool).to(device)
-    else:
-        token_mask = None
-    if "ode" in method.lower():
-        tp = float(method.split(":")[-1])
-        assert tp > 0, "Sampling temperature should be higher than 0."
+    y = _map_to_device(y, device)
+    token_mask = _build_token_mask(allowed_tokens, vocab_keys, device)
+    if tp:
         tokens, entropy = model.ode_sample(
             batch_size, sequence_size, y, sample_step, guidance_strength, token_mask, tp
         )
@@ -283,16 +321,7 @@ def sample(
         tokens, entropy = model.sample(
             batch_size, sequence_size, y, sample_step, guidance_strength, token_mask
         )
-    if sort:
-        sorted_idx = entropy.argsort(stable=True)
-        tokens = tokens[sorted_idx]
-    return [
-        seperator.join([vocab_keys[i] for i in j])
-        .split("<start>" + seperator)[-1]
-        .split(seperator + "<end>")[0]
-        .replace("<pad>", "")
-        for j in tokens
-    ]
+    return _token_to_seq(tokens, entropy, vocab_keys, seperator, sort)
 
 
 @torch.no_grad()
@@ -339,33 +368,13 @@ def inpaint(
     :return: a list of generated molecular strings
     :rtype: list
     """
-    assert method.split(":")[0].lower() in ("ode", "bfn")
-    if isinstance(model, EnsembleChemBFN):
-        assert y is not None, "conditioning is required while using an ensemble model."
-        assert isinstance(y, list) or isinstance(y, dict)
-    else:
-        assert isinstance(y, Tensor) or y is None
-    if device is None:
-        device = _find_device()
+    tp = _parse_and_assert_param(model, y, method)
+    device = _find_device() if device is None else device
     model.to(device).eval()
     x = x.to(device)
-    if y is not None:
-        if isinstance(y, Tensor):
-            y = y.to(device)
-        elif isinstance(y, list):
-            y = [i.to(device) for i in y]
-        elif isinstance(y, dict):
-            y = {k: v.to(device) for k, v in y.items()}
-        else:
-            raise NotImplementedError
-    if isinstance(allowed_tokens, list):
-        token_mask = [0 if i in allowed_tokens else 1 for i in vocab_keys]
-        token_mask = torch.tensor([[token_mask]], dtype=torch.bool).to(device)
-    else:
-        token_mask = None
-    if "ode" in method.lower():
-        tp = float(method.split(":")[-1])
-        assert tp > 0, "Sampling temperature should be higher than 0."
+    y = _map_to_device(y, device)
+    token_mask = _build_token_mask(allowed_tokens, vocab_keys, device)
+    if tp:
         tokens, entropy = model.ode_inpaint(
             x, y, sample_step, guidance_strength, token_mask, tp
         )
@@ -373,16 +382,7 @@ def inpaint(
         tokens, entropy = model.inpaint(
             x, y, sample_step, guidance_strength, token_mask
         )
-    if sort:
-        sorted_idx = entropy.argsort(stable=True)
-        tokens = tokens[sorted_idx]
-    return [
-        separator.join([vocab_keys[i] for i in j])
-        .split("<start>" + separator)[-1]
-        .split(separator + "<end>")[0]
-        .replace("<pad>", "")
-        for j in tokens
-    ]
+    return _token_to_seq(tokens, entropy, vocab_keys, separator, sort)
 
 
 @torch.no_grad()
@@ -429,33 +429,13 @@ def optimise(
     :return: a list of generated molecular strings
     :rtype: list
     """
-    assert method.split(":")[0].lower() in ("ode", "bfn")
-    if isinstance(model, EnsembleChemBFN):
-        assert y is not None, "conditioning is required while using an ensemble model."
-        assert isinstance(y, list) or isinstance(y, dict)
-    else:
-        assert isinstance(y, Tensor) or y is None
-    if device is None:
-        device = _find_device()
+    tp = _parse_and_assert_param(model, y, method)
+    device = _find_device() if device is None else device
     model.to(device).eval()
     x = x.to(device)
-    if y is not None:
-        if isinstance(y, Tensor):
-            y = y.to(device)
-        elif isinstance(y, list):
-            y = [i.to(device) for i in y]
-        elif isinstance(y, dict):
-            y = {k: v.to(device) for k, v in y.items()}
-        else:
-            raise NotImplementedError
-    if isinstance(allowed_tokens, list):
-        token_mask = [0 if i in allowed_tokens else 1 for i in vocab_keys]
-        token_mask = torch.tensor([[token_mask]], dtype=torch.bool).to(device)
-    else:
-        token_mask = None
-    if "ode" in method.lower():
-        tp = float(method.split(":")[-1])
-        assert tp > 0, "Sampling temperature should be higher than 0."
+    y = _map_to_device(y, device)
+    token_mask = _build_token_mask(allowed_tokens, vocab_keys, device)
+    if tp:
         tokens, entropy = model.ode_optimise(
             x, y, sample_step, guidance_strength, token_mask, tp
         )
@@ -463,16 +443,7 @@ def optimise(
         tokens, entropy = model.optimise(
             x, y, sample_step, guidance_strength, token_mask
         )
-    if sort:
-        sorted_idx = entropy.argsort(stable=True)
-        tokens = tokens[sorted_idx]
-    return [
-        separator.join([vocab_keys[i] for i in j])
-        .split("<start>" + separator)[-1]
-        .split(separator + "<end>")[0]
-        .replace("<pad>", "")
-        for j in tokens
-    ]
+    return _token_to_seq(tokens, entropy, vocab_keys, separator, sort)
 
 
 def quantise_model_(model: ChemBFN) -> None:
