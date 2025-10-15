@@ -659,7 +659,7 @@ class ChemBFN(nn.Module):
         return (-logits.gather(-1, x[..., :1]).squeeze(-1)).mean()
 
     @staticmethod
-    def _reshape_y(y: Tensor) -> Tensor:
+    def _reshape(y: Tensor) -> Tensor:
         assert y.dim() <= 3  # this doesn't work if the model is frezen in JIT.
         if y.dim() == 2:
             return y[:, None, :]
@@ -681,7 +681,7 @@ class ChemBFN(nn.Module):
         #       condition distribution mask;    shape: (n_b, n_t, 1)
         n_b = theta.shape[0]
         if y is not None:
-            y = self._reshape_y(y)
+            y = self._reshape(y)
         for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
             t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
             p = self.discrete_output_distribution(theta, t, y, guidance_strength)
@@ -720,7 +720,7 @@ class ChemBFN(nn.Module):
         #       condition distribution mask;    shape: (n_b, n_t, 1)
         n_b = z.shape[0]
         if y is not None:
-            y = self._reshape_y(y)
+            y = self._reshape(y)
         for i in torch.linspace(1, sample_step, sample_step, device=self.beta.device):
             t = (i - 1).view(1, 1, 1).repeat(n_b, 1, 1) / sample_step
             theta = softmax(z, -1)
@@ -1131,22 +1131,6 @@ class EnsembleChemBFN(ChemBFN):
                     module.lora_dropout = None
             v.lora_enabled = False
 
-    def construct_y(
-        self, c: Union[List[Tensor], Dict[str, Tensor]]
-    ) -> Dict[str, Tensor]:
-        assert (
-            isinstance(c, dict) is self._label_is_dict
-        ), f"`c` should be a {'`dict` instance' if self._label_is_dict else '`list` instance'} but got {type(c)} instand."
-        out: Dict[str, Tensor] = {}
-        if isinstance(c, list):
-            c = dict(zip([f"val_{i}" for i in range(len(c))], c))
-        for name, model in self.cond_heads.items():
-            y = model.forward(c[name])
-            if y.dim() == 2:
-                y = y[:, None, :]
-            out[name] = y
-        return out
-
     def discrete_output_distribution(
         self, theta: Tensor, t: Tensor, y: Dict[str, Tensor], w: float
     ) -> Tensor:
@@ -1181,8 +1165,24 @@ class EnsembleChemBFN(ChemBFN):
             p_cond += p_cond_ * self.adapter_weights[name]
         return softmax((1 + w) * p_cond - w * p_uncond, -1)
 
+    def _map_to_dict(
+        self, c: Union[List[Tensor], Dict[str, Tensor]]
+    ) -> Dict[str, Tensor]:
+        assert (
+            isinstance(c, dict) is self._label_is_dict
+        ), f"`c` should be a {'`dict` instance' if self._label_is_dict else '`list` instance'} but got {type(c)} instand."
+        out: Dict[str, Tensor] = {}
+        if isinstance(c, list):
+            c = dict(zip([f"val_{i}" for i in range(len(c))], c))
+        for name, model in self.cond_heads.items():
+            y = model.forward(c[name])
+            if y.dim() == 2:
+                y = y[:, None, :]
+            out[name] = y
+        return out
+
     @staticmethod
-    def _reshape_y(y: Dict[str, Tensor]) -> Dict[str, Tensor]:
+    def _reshape(y: Dict[str, Tensor]) -> Dict[str, Tensor]:
         for k in y:
             assert y[k].dim() <= 3
             if y[k].dim() == 2:
@@ -1218,7 +1218,7 @@ class EnsembleChemBFN(ChemBFN):
                  entropy of the tokens;          shape: (n_b)
         :rtype: tuple
         """
-        y = self.construct_y(conditions)
+        y = self._map_to_dict(conditions)
         return super().sample(
             batch_size, sequence_size, y, sample_step, guidance_strength, token_mask
         )
@@ -1255,7 +1255,7 @@ class EnsembleChemBFN(ChemBFN):
                  entropy of the tokens;          shape: (n_b)
         :rtype: tuple
         """
-        y = self.construct_y(conditions)
+        y = self._map_to_dict(conditions)
         return super().ode_sample(
             batch_size,
             sequence_size,
@@ -1292,7 +1292,7 @@ class EnsembleChemBFN(ChemBFN):
                  entropy of the tokens;             shape: (n_b)
         :rtype: tuple
         """
-        y = self.construct_y(conditions)
+        y = self._map_to_dict(conditions)
         return super().inpaint(x, y, sample_step, guidance_strength, token_mask)
 
     @torch.inference_mode()
@@ -1324,7 +1324,7 @@ class EnsembleChemBFN(ChemBFN):
                  entropy of the tokens;             shape: (n_b)
         :rtype: tuple
         """
-        y = self.construct_y(conditions)
+        y = self._map_to_dict(conditions)
         return super().ode_inpaint(
             x, y, sample_step, guidance_strength, token_mask, temperature
         )
@@ -1357,7 +1357,7 @@ class EnsembleChemBFN(ChemBFN):
                  entropy of the tokens;             shape: (n_b)
         :rtype: tuple
         """
-        y = self.construct_y(conditions)
+        y = self._map_to_dict(conditions)
         return super().optimise(x, y, sample_step, guidance_strength, token_mask)
 
     @torch.inference_mode()
@@ -1389,7 +1389,7 @@ class EnsembleChemBFN(ChemBFN):
                  entropy of the tokens;             shape: (n_b)
         :rtype: tuple
         """
-        y = self.construct_y(conditions)
+        y = self._map_to_dict(conditions)
         return super().ode_optimise(
             x, y, sample_step, guidance_strength, token_mask, temperature
         )
