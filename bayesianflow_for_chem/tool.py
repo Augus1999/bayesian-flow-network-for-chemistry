@@ -23,15 +23,7 @@ from rdkit.Chem import (
     AddHs,
     Mol,
 )
-from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles  # type: ignore
-from sklearn.metrics import (
-    roc_auc_score,
-    auc,
-    precision_recall_curve,
-    r2_score,
-    mean_absolute_error,
-    root_mean_squared_error,
-)
+from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from .data import VOCAB_KEYS
 from .model import ChemBFN, MLP, EnsembleChemBFN
 
@@ -147,6 +139,12 @@ def test(
         predict_y.append(y_hat.detach().to("cpu"))
     predict_y, label_y = torch.cat(predict_y, 0), torch.cat(label_y, 0).split(1, -1)
     if mode == "regression":
+        from sklearn.metrics import (
+            r2_score,
+            mean_absolute_error,
+            root_mean_squared_error,
+        )
+
         predict_y = [
             predict[label_y[i] != torch.inf]
             for (i, predict) in enumerate(predict_y.split(1, -1))
@@ -160,6 +158,8 @@ def test(
         r2 = [r2_score(label, predict) for (label, predict) in y_zipped]
         return {"MAE": mae, "RMSE": rmse, "R^2": r2}
     if mode == "classification":
+        from sklearn.metrics import roc_auc_score, auc, precision_recall_curve
+
         n_c = len(label_y)
         predict_y = predict_y.chunk(n_c, -1)
         y_zipped = list(zip(label_y, predict_y))

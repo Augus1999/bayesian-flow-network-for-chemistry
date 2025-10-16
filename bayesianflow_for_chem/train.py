@@ -8,7 +8,6 @@ from typing import Dict, Tuple, Union, Optional
 import torch
 import torch.optim as op
 import torch.nn.functional as F
-from loralib import lora_state_dict, mark_only_lora_as_trainable
 from torch import Tensor
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from lightning import LightningModule
@@ -55,6 +54,8 @@ class Model(LightningModule):
         self.scorer = scorer
         self.save_hyperparameters(hparam, ignore=["model", "mlp", "scorer"])
         if model.lora_enabled:
+            from loralib import mark_only_lora_as_trainable
+
             mark_only_lora_as_trainable(self.model)
         self.use_scorer = self.scorer is not None
 
@@ -107,6 +108,8 @@ class Model(LightningModule):
         :rtype: None
         """
         if self.model.lora_enabled:
+            from loralib import lora_state_dict
+
             torch.save(
                 {
                     "lora_nn": lora_state_dict(self.model),
@@ -152,6 +155,8 @@ class Regressor(LightningModule):
         self.model.requires_grad_(not hparam["freeze"])
         self.save_hyperparameters(hparam, ignore=["model", "mlp"])
         if model.lora_enabled:
+            from loralib import mark_only_lora_as_trainable
+
             mark_only_lora_as_trainable(self.model)
         assert hparam["mode"] in ("regression", "classification")
 
@@ -231,6 +236,8 @@ class Regressor(LightningModule):
         )
         if not self.hparams.freeze:
             if self.model.lora_enabled:
+                from loralib import lora_state_dict
+
                 torch.save(
                     {
                         "lora_nn": lora_state_dict(self.model),

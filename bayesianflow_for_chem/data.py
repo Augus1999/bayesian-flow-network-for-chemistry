@@ -61,7 +61,7 @@ def load_vocab(
     }
 
 
-_DEFUALT_VOCAB = load_vocab(__filedir__ / "vocab.txt")
+_DEFUALT_VOCAB = load_vocab(__filedir__ / "_data/vocab.txt")
 VOCAB_KEYS: List[str] = _DEFUALT_VOCAB["vocab_keys"]
 VOCAB_DICT: Dict[str, int] = _DEFUALT_VOCAB["vocab_dict"]
 VOCAB_COUNT: int = _DEFUALT_VOCAB["vocab_count"]

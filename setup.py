@@ -45,7 +45,7 @@ setup(
     license="AGPL-3.0-or-later",
     license_files=["LICEN[CS]E*"],
     package_dir={"bayesianflow_for_chem": "bayesianflow_for_chem"},
-    package_data={"bayesianflow_for_chem": ["./*.txt", "./*.py"]},
+    package_data={"bayesianflow_for_chem": ["./_data/*.txt"]},
     include_package_data=True,
     author="Nianze A. Tao",
     author_email="tao-nianze@hiroshima-u.ac.jp",

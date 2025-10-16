@@ -12,13 +12,8 @@ from pathlib import Path
 from functools import partial
 from typing import List, Tuple, Dict, Union, Callable
 import torch
-import lightning as L
 from rdkit.Chem import MolFromSmiles, CanonSmiles
-from torch.utils.data import DataLoader
-from lightning.pytorch import loggers
-from lightning.pytorch.callbacks import ModelCheckpoint
 from bayesianflow_for_chem import ChemBFN, MLP
-from bayesianflow_for_chem.train import Model
 from bayesianflow_for_chem.scorer import smiles_valid, Scorer
 from bayesianflow_for_chem.data import (
     VOCAB_COUNT,
@@ -453,6 +448,12 @@ def main_script(version: str) -> None:
         mlp = None
     # ------- train -------
     if "train" in runtime_config:
+        import lightning as L
+        from torch.utils.data import DataLoader
+        from lightning.pytorch import loggers
+        from lightning.pytorch.callbacks import ModelCheckpoint
+        from bayesianflow_for_chem.train import Model
+
         # ####### get plugins #######
         plugin_file = runtime_config["train"].get("plugin_script", "")
         plugins = _load_plugin(plugin_file)
