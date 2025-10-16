@@ -25,6 +25,7 @@ checkpoint_save_path = "home/user/project/ckpt"
 train_strategy = "auto"  # or any strategy supported by Lightning, e.g., "ddp"
 accumulate_grad_batches = 1
 enable_progress_bar = false
+plugin_script = ""  # define customised behaviours of dataset, datasetloader, etc in a python script
 
 # Remove this table if inference is unnecessary
 [inference]

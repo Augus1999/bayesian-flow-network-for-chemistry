@@ -90,6 +90,7 @@ checkpoint_save_path = "home/user/project/ckpt"
 train_strategy = "auto"  # or any strategy supported by Lightning, e.g., "ddp"
 accumulate_grad_batches = 1
 enable_progress_bar = false
+plugin_script = ""  # define customised behaviours of dataset, datasetloader, etc in a python script
 
 # Remove this table if inference is unnecessary
 [inference]
@@ -119,6 +120,32 @@ madmadmadmadmadmadmadmadmadmadmadmadmadmadmad
                  Version {}
 madmadmadmadmadmadmadmadmadmadmadmadmadmadmad
 """
+
+_ALLOWED_PLUGINS = [
+    "collate_fn",
+    "num_workers",
+    "max_sequence_length",
+    "shuffle",
+    "CustomData",
+]
+
+
+def _load_plugin(plugin_file: str) -> Dict[str, Union[int, Callable, object, None]]:
+    if not plugin_file:
+        return {n: None for n in _ALLOWED_PLUGINS}
+    from importlib import util as iutil
+
+    spec = iutil.spec_from_file_location(Path(plugin_file).stem, plugin_file)
+    plugins = iutil.module_from_spec(spec)
+    spec.loader.exec_module(plugins)
+    plugin_names: List[str] = plugins.__all__
+    plugin_dict = {}
+    for n in _ALLOWED_PLUGINS:
+        if n in plugin_names:
+            plugin_dict[n] = getattr(plugins, n)
+        else:
+            plugin_dict[n] = None
+    return plugin_dict
 
 
 def parse_cli(version: str) -> argparse.Namespace:
@@ -267,6 +294,14 @@ def load_runtime_config(
                     f"\033[0;31mCritical\033[0;0m in {config_file}: Restart checkpoint file {ckpt_file} does not exist."
                 )
                 flag_critical += 1
+        # ↓ added in v2.2.0; need to be compatible with old versions.
+        plugin_script: str = config["train"].get("plugin_script", "")
+        if plugin_script:
+            if not os.path.exists(plugin_script):
+                print(
+                    f"\033[0;31mCritical\033[0;0m in {config_file}: Plugin script {plugin_script} does not exist."
+                )
+                flag_critical += 1
     if "inference" in config:
         if not "train" in config:
             if not isinstance(config["inference"]["sequence_length"], int):
@@ -335,7 +370,8 @@ def main_script(version: str) -> None:
                 )
                 flag_warning += 1
         if not os.path.exists(runtime_config["train"]["checkpoint_save_path"]):
-            os.makedirs(runtime_config["train"]["checkpoint_save_path"])
+            if not parser.dryrun:  # only create it in real tasks
+                os.makedirs(runtime_config["train"]["checkpoint_save_path"])
     else:
         if not model_config["ChemBFN"]["base_model"]:
             print(
@@ -356,7 +392,9 @@ def main_script(version: str) -> None:
         if flag_critical != 0:
             print("Configuration check failed!")
         elif flag_warning != 0:
-            print("Your job will probably run, but it may not follow your expectation.")
+            print(
+                "Your job will probably run, but it may not follow your expectations."
+            )
         else:
             print("Configuration check passed.")
         return
@@ -415,6 +453,9 @@ def main_script(version: str) -> None:
         mlp = None
     # ------- train -------
     if "train" in runtime_config:
+        # ####### get plugins #######
+        plugin_file = runtime_config["train"].get("plugin_script", "")
+        plugins = _load_plugin(plugin_file)
         # ####### build scorer #######
         if (tokeniser_name == "smiles" or tokeniser_name == "safe") and runtime_config[
             "train"
@@ -428,30 +469,38 @@ def main_script(version: str) -> None:
         mol_tag = runtime_config["train"]["molecule_tag"]
         obj_tag = runtime_config["train"]["objective_tag"]
         dataset_file = runtime_config["train"]["dataset"]
-        with open(dataset_file, "r") as db:
-            _data = db.readlines()
-        _header = _data[0]
-        _mol_idx = []
-        for i, tag in enumerate(_header.replace("\n", "").split(",")):
-            if tag == mol_tag:
-                _mol_idx.append(i)
-        _data_len = []
-        for i in _data[1:]:
-            i = i.replace("\n", "").split(",")
-            _mol = ".".join([i[j] for j in _mol_idx])
-            _data_len.append(tokeniser(_mol).shape[-1])
-        lmax = max(_data_len)
-        del _data, _data_len, _header, _mol_idx  # clear memory
-        dataset = CSVData(dataset_file)
+        if plugins["max_sequence_length"]:
+            lmax = plugins["max_sequence_length"]
+        else:
+            with open(dataset_file, "r") as db:
+                _data = db.readlines()
+            _header = _data[0]
+            _mol_idx = []
+            for i, tag in enumerate(_header.replace("\n", "").split(",")):
+                if tag == mol_tag:
+                    _mol_idx.append(i)
+            _data_len = []
+            for i in _data[1:]:
+                i = i.replace("\n", "").split(",")
+                _mol = ".".join([i[j] for j in _mol_idx])
+                _data_len.append(tokeniser(_mol).shape[-1])
+            lmax = max(_data_len)
+            del _data, _data_len, _header, _mol_idx  # clear memory
+        if plugins["CustomData"] is not None:
+            dataset = plugins["CustomData"](dataset_file)
+        else:
+            dataset = CSVData(dataset_file)
         dataset.map(
             partial(_encode, mol_tag=mol_tag, obj_tag=obj_tag, tokeniser=tokeniser)
         )
         dataloader = DataLoader(
             dataset,
             runtime_config["train"]["batch_size"],
-            True,
-            num_workers=4,
-            collate_fn=collate,
+            True if plugins["shuffle"] is None else plugins["shuffle"],
+            num_workers=4 if plugins["num_workers"] is None else plugins["num_workers"],
+            collate_fn=(
+                collate if plugins["collate_fn"] is None else plugins["collate_fn"]
+            ),
             persistent_workers=True,
         )
         # ####### build trainer #######
@@ -531,6 +580,7 @@ def main_script(version: str) -> None:
         if "train" in runtime_config:
             bfn = model.model
             mlp = model.mlp
+        # ↓ added in v2.1.0; need to be compatible with old versions
         lora_scaling = runtime_config["inference"].get("lora_scaling", 1.0)
         # ####### strat inference #######
         bfn.semi_autoregressive = runtime_config["inference"]["semi_autoregressive"]

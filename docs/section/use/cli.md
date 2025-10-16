@@ -26,6 +26,8 @@ This command will give you hints, if any, of misconfigurations that will probabl
 madmol [YOUR_CONFIG.toml] [YOUR_MODEL_CONFIG.toml]
 ```
 
+#### 4.1. Defining task
+
 The first positional argument `[YOUR_CONFIG.toml]` should be an absolute path pointing to a TOML file defining the runtime configurations. The format should follow the example below.
 
 ```toml
@@ -73,13 +75,15 @@ exclude_duplicate = true                    # <-- whether to only store unique s
 result_file = "home/user/project/result/result.csv"
 ```
 
-> [!NOTE]
+Important notes:
+
 > `lora_scaling` and `sample_template` were added in version 2.1.0
 >
 > `plugin_script` was added in version 2.2.0
 
-The second positional argument `[YOUR_MODEL_CONFIG.toml]` should be an absolute path pointing to a TOML file defining the model hyperparameters. The following example shows the format.
+#### 4.2. Defining model architecture
 
+The second positional argument `[YOUR_MODEL_CONFIG.toml]` should be an absolute path pointing to a TOML file defining the model hyperparameters. The following example shows the format.
 
 ```toml
 [ChemBFN]
@@ -95,3 +99,60 @@ size = [3, 256, 512]                 # <-- dimension of the vector goes as 3 -->
 class_input = false                  # <-- set to true if the inputs are class indices
 base_model = ""                      # <-- specify a base model checkpoint in absolute path when necessary
 ```
+
+#### 4.3. Defining customised behaviours
+
+Since version 2.2.0, it is possible to pass a Python3 script to the program via `plugin_script={PATH\TO\YOUR\SCRIPT.py}` in `[YOUR_CONFIG.toml]` to control the behaviours of dataset loading and sequence padding. Recently, the accepted customised values are `collate_fn`, `num_workers`, `shuffle`, `max_sequence_length`, and `CustomData`.
+
+For instance, to disable shuffling the batches
+
+```python
+shuffle = False
+```
+to change the number of workers (_default value is 4_) in the `~torch.utils.data.DataLoader` instance
+
+```python
+num_worker = 0
+```
+
+to define a padding length (_default is the maximum length in the dataset_)
+
+```python
+max_sequence_length = 125
+```
+
+to use a customised collating function
+
+```python
+import random
+from bayesianflow_for_chem.data import collate
+
+def collate_fn(x):
+    random.shuffle(x)
+    return collate(x)
+```
+
+or to define your own dataset object (e.g., chunked dataset class)
+
+```python
+import torch
+import pandas as pd
+from bayesianflow_for_chem.data import CSVData
+
+class CustomData(CSVData):
+    def __init__(self, file, chunksize: int = 100000):
+        super().__init__(file)
+        ...  # your code
+
+    def __len__(self):
+        return ...  # your code
+    
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        ...  # your code
+```
+
+In order to tell the program which customised values should be used, it is necessary to encapsulate them in `__all__` variable, e.g., `__all__ = ["collate_fn", "num_workers", "shuffle", "max_sequence_length", "CustomData"]`.
+
+Note that if you define a dataset class not inherited from `CSVData`, make sure you include the `map(...)` method. If `map(...)` method is unnecessary for your `CustomData`, set it to `lambda x: None`. A detailed example can be found [here](https://github.com/Augus1999/bayesian-flow-network-for-chemistry/blob/main/example/cli/plugin.py).
