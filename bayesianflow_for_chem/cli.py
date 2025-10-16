@@ -381,7 +381,9 @@ def main_script(version: str) -> None:
     if "inference" in runtime_config:
         if runtime_config["inference"]["guidance_objective"]:
             if not "MLP" in model_config:
-                print(f"Warning in {parser.model_config}: Oh no, you don't have a MLP.")
+                print(
+                    f"\033[0;33mWarning\033[0;0m in {parser.model_config}: Oh no, you don't have a MLP."
+                )
                 flag_warning += 1
     if parser.dryrun:
         if flag_critical != 0:
@@ -502,7 +504,11 @@ def main_script(version: str) -> None:
             collate_fn=(
                 collate if plugins["collate_fn"] is None else plugins["collate_fn"]
             ),
-            persistent_workers=True,
+            persistent_workers=(
+                True
+                if (plugins["num_workers"] is None or plugins["num_workers"] > 0)
+                else False
+            ),
         )
         # ####### build trainer #######
         logger_name = runtime_config["train"]["logger_name"].lower()
