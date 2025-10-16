@@ -373,7 +373,7 @@ def main_script(version: str) -> None:
                 f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained ChemBFN model."
             )
             flag_warning += 1
-        if not model_config["MLP"]["base_model"]:
+        if "MLP" in model_config and not model_config["MLP"]["base_model"]:
             print(
                 f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained MLP."
             )
