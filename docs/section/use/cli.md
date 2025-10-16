@@ -53,6 +53,7 @@ checkpoint_save_path = "home/user/project/ckpt"
 train_strategy = "auto"                  # <-- any strategy supported by Lightning, e.g., "ddp"
 accumulate_grad_batches = 1
 enable_progress_bar = false
+plugin_script = ""                       # <-- define customised behaviours of dataset, datasetloader, etc in a python script
 
 [inference]  # <-- Remove this table if inference is unnecessary
 mini_batch_size = 50
@@ -72,7 +73,13 @@ exclude_duplicate = true                    # <-- whether to only store unique s
 result_file = "home/user/project/result/result.csv"
 ```
 
+> [!NOTE]
+> `lora_scaling` and `sample_template` were added in version 2.1.0
+>
+> `plugin_script` was added in version 2.2.0
+
 The second positional argument `[YOUR_MODEL_CONFIG.toml]` should be an absolute path pointing to a TOML file defining the model hyperparameters. The following example shows the format.
+
 
 ```toml
 [ChemBFN]
