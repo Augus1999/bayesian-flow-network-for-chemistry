@@ -6,15 +6,15 @@ bayesianflow_for_chem.data.__VOCAB_KEYS__
 
 bayesianflow_for_chem.data.__VOCAB_COUNT__
 
-&nbsp;&nbsp;&nbsp; Default number of vocabularies of SMILES and SAFE
+&nbsp;&nbsp;&nbsp; Default number of vocabularies of SMILES and SAFE.
 
-bayesianflow_for_chem.data.__AA_VOCAB_KEYS__
+bayesianflow_for_chem.data.__FASTA_VOCAB_KEYS__
 
-&nbsp;&nbsp;&nbsp; Default FASTA-style amino acid sequence vocabulary keys.
+&nbsp;&nbsp;&nbsp; Default FASTA sequence vocabulary keys.
 
-bayesianflow_for_chem.data.__AA_VOCAB_COUNT__
+bayesianflow_for_chem.data.__FASTA_VOCAB_COUNT__
 
-&nbsp;&nbsp;&nbsp; Default number of vocabularues of amino acid sequence.
+&nbsp;&nbsp;&nbsp; Default number of vocabularues of FASTA.
 
 bayesianflow_for_chem.train.__DEFAULT_MODEL_HPARAM__
 
@@ -34,9 +34,9 @@ bayesianflow_for_chem.data.__smiles2token__(_smiles_) &#8594; Tensor
 
 &nbsp;&nbsp;&nbsp; Tokenise a SMILES and SAFE string.
 
-bayesianflow_for_chem.data.__aa2token__(_aa_seq_) &#8594; Tensor
+bayesianflow_for_chem.data.__fasta2token__(_fasta_) &#8594; Tensor
 
-&nbsp;&nbsp;&nbsp; Tokenise a FASTA-style amino acid sequence.
+&nbsp;&nbsp;&nbsp; Tokenise a FASTA-style sequence.
 
 bayesianflow_for_chem.data.__split_selfies__(_selfies_) &#8594; list
 

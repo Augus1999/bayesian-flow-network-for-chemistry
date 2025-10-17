@@ -18,11 +18,11 @@ from bayesianflow_for_chem.scorer import smiles_valid, Scorer
 from bayesianflow_for_chem.data import (
     VOCAB_COUNT,
     VOCAB_KEYS,
-    AA_VOCAB_COUNT,
-    AA_VOCAB_KEYS,
+    FASTA_VOCAB_COUNT,
+    FASTA_VOCAB_KEYS,
     load_vocab,
     smiles2token,
-    aa2token,
+    fasta2token,
     split_selfies,
     collate,
     CSVData,
@@ -114,6 +114,23 @@ madmadmadmadmadmadmadmadmadmadmadmadmadmadmad
  (_/\/\_)(__)(__)(____/(_/\/\_)(_____)(____) 
                  Version {}
 madmadmadmadmadmadmadmadmadmadmadmadmadmadmad
+"""
+
+_END_MESSAGE = r"""
+If you find this project helpful, please cite us:
+1. N. Tao, and M. Abe, J. Chem. Inf. Model., 2025, 65, 1178-1187.
+2. N. Tao, 2024, arXiv:2412.11439.
+"""
+
+_ERROR_MESSAGE = r"""
+Some who believe in inductive logic are anxious to point out, with
+Reichenbach, that 'the principle of induction is unreservedly accepted
+by the whole of science and that no man can seriously doubt this
+principle in everyday life either'. Yet even supposing this were the
+case—for after all, 'the whole of science' might err—I should still
+contend that a principle of induction is superfluous, and that it must
+lead to logical inconsistencies.  
+                        -- Karl Popper --
 """
 
 _ALLOWED_PLUGINS = [
@@ -396,7 +413,7 @@ def main_script(version: str) -> None:
             print("Configuration check passed.")
         return
     if flag_critical != 0:
-        raise RuntimeError
+        raise RuntimeError(_ERROR_MESSAGE)
     print(_MESSAGE.format(version))
     # ####### build tokeniser #######
     tokeniser_config = runtime_config["tokeniser"]
@@ -406,9 +423,9 @@ def main_script(version: str) -> None:
         vocab_keys = VOCAB_KEYS
         tokeniser = smiles2token
     if tokeniser_name == "fasta":
-        num_vocab = AA_VOCAB_COUNT
-        vocab_keys = AA_VOCAB_KEYS
-        tokeniser = aa2token
+        num_vocab = FASTA_VOCAB_COUNT
+        vocab_keys = FASTA_VOCAB_KEYS
+        tokeniser = fasta2token
     if tokeniser_name == "selfies":
         vocab_data = load_vocab(tokeniser_config["vocab"])
         num_vocab = vocab_data["vocab_count"]
@@ -680,6 +697,7 @@ def main_script(version: str) -> None:
             f.write("\n".join(mols))
     # ------- finished -------
     print(" ####### job finished #######")
+    print(_END_MESSAGE)
 
 
 if __name__ == "__main__":

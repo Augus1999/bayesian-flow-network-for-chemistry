@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Author: Nianze A. TAO (Omozawa SUENO)
 """
-Tokenise SMILES/SAFE/SELFIES/protein-sequence strings.
+Tokenise SMILES/SAFE/SELFIES/FASTA strings.
 """
 import os
 import re
@@ -14,7 +14,7 @@ from torch.utils.data import Dataset
 
 __filedir__ = Path(__file__).parent
 
-SMI_REGEX_PATTERN = (
+_SMI_REGEX_PATTERN = (
     r"(\[|\]|H[e,f,g,s,o]?|"
     r"L[i,v,a,r,u]|"
     r"B[e,r,a,i,h,k]?|"
@@ -31,11 +31,11 @@ SMI_REGEX_PATTERN = (
     r"\(|\)|\.|=|#|-|\+|\\|\/|:|"
     r"~|@|\?|>>?|\*|\$|\%[0-9]{2}|[0-9])"
 )
-SEL_REGEX_PATTERN = r"(\[[^\]]+]|\.)"
-AA_REGEX_PATTERN = r"(A|B|C|D|E|F|G|H|I|K|L|M|N|P|Q|R|S|T|V|W|Y|Z|-|.)"
-smi_regex = re.compile(SMI_REGEX_PATTERN)
-sel_regex = re.compile(SEL_REGEX_PATTERN)
-aa_regex = re.compile(AA_REGEX_PATTERN)
+_SEL_REGEX_PATTERN = r"(\[[^\]]+]|\.)"
+_FAS_REGEX_PATTERN = r"(A|B|C|D|E|F|G|H|I|J|K|L|M|N|O|P|Q|R|S|T|U|V|W|X|Y|Z|-|\*|\.)"
+_smi_regex = re.compile(_SMI_REGEX_PATTERN)
+_sel_regex = re.compile(_SEL_REGEX_PATTERN)
+_fas_regex = re.compile(_FAS_REGEX_PATTERN)
 
 
 def load_vocab(
@@ -65,11 +65,12 @@ _DEFUALT_VOCAB = load_vocab(__filedir__ / "_data/vocab.txt")
 VOCAB_KEYS: List[str] = _DEFUALT_VOCAB["vocab_keys"]
 VOCAB_DICT: Dict[str, int] = _DEFUALT_VOCAB["vocab_dict"]
 VOCAB_COUNT: int = _DEFUALT_VOCAB["vocab_count"]
-AA_VOCAB_KEYS = (
-    VOCAB_KEYS[0:3] + "A B C D E F G H I K L M N P Q R S T V W Y Z - .".split()
+FASTA_VOCAB_KEYS = (
+    VOCAB_KEYS[0:3]
+    + "A B C D E F G H I K L M N P Q R S T V W Y Z - . J O U X *".split()
 )
-AA_VOCAB_COUNT = len(AA_VOCAB_KEYS)
-AA_VOCAB_DICT = dict(zip(AA_VOCAB_KEYS, range(AA_VOCAB_COUNT)))
+FASTA_VOCAB_COUNT = len(FASTA_VOCAB_KEYS)
+FASTA_VOCAB_DICT = dict(zip(FASTA_VOCAB_KEYS, range(FASTA_VOCAB_COUNT)))
 
 
 def smiles2vec(smiles: str) -> List[int]:
@@ -81,21 +82,21 @@ def smiles2vec(smiles: str) -> List[int]:
     :return: tokens w/o `<start>` and `<end>`
     :rtype: list
     """
-    tokens = [token for token in smi_regex.findall(smiles)]
+    tokens = [token for token in _smi_regex.findall(smiles)]
     return [VOCAB_DICT[token] for token in tokens]
 
 
-def aa2vec(aa_seq: str) -> List[int]:
+def fasta2vec(fasta: str) -> List[int]:
     """
-    Protein sequence tokenisation using a dataset-independent regex pattern.
+    FASTA sequence tokenisation using a dataset-independent regex pattern.
 
-    :param aa_seq: protein (amino acid) sequence
-    :type aa_seq: str
+    :param fasta: protein (amino acid) sequence
+    :type fasta: str
     :return: tokens w/o `<start>` and `<end>`
     :rtype: list
     """
-    tokens = [token for token in aa_regex.findall(aa_seq)]
-    return [AA_VOCAB_DICT[token] for token in tokens]
+    tokens = [token for token in _fas_regex.findall(fasta)]
+    return [FASTA_VOCAB_DICT[token] for token in tokens]
 
 
 def split_selfies(selfies: str) -> List[str]:
@@ -107,7 +108,7 @@ def split_selfies(selfies: str) -> List[str]:
     :return: SELFIES vocab
     :rtype: list
     """
-    return [token for token in sel_regex.findall(selfies)]
+    return [token for token in _sel_regex.findall(selfies)]
 
 
 def smiles2token(smiles: str) -> Tensor:
@@ -115,9 +116,9 @@ def smiles2token(smiles: str) -> Tensor:
     return torch.tensor([1] + smiles2vec(smiles) + [2], dtype=torch.long)
 
 
-def aa2token(aa_seq: str) -> Tensor:
+def fasta2token(fasta: str) -> Tensor:
     # start token: <start> = 1; end token: <end> = 2
-    return torch.tensor([1] + aa2vec(aa_seq) + [2], dtype=torch.long)
+    return torch.tensor([1] + fasta2vec(fasta) + [2], dtype=torch.long)
 
 
 def collate(batch: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:

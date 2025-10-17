@@ -7,7 +7,7 @@ import csv
 import random
 import warnings
 from pathlib import Path
-from typing import List, Dict, Tuple, Union, Optional
+from typing import List, Dict, Tuple, Union, Optional, Literal
 import torch
 import numpy as np
 from torch import cuda, Tensor, softmax
@@ -103,7 +103,7 @@ def test(
     model: ChemBFN,
     mlp: MLP,
     data: DataLoader,
-    mode: str = "regression",
+    mode: Literal["regression", "classification"] = "regression",
     device: Union[str, torch.device, None] = None,
 ) -> Dict[str, float]:
     """
@@ -184,7 +184,9 @@ def test(
 
 
 def split_dataset(
-    file: Union[str, Path], split_ratio: List[int] = [8, 1, 1], method: str = "random"
+    file: Union[str, Path],
+    split_ratio: List[int] = [8, 1, 1],
+    method: Literal["random", "scaffold"] = "random",
 ) -> None:
     """
     Split a dataset.
@@ -526,7 +528,7 @@ class GeometryConverter:
     def smiles2cartesian(
         smiles: str,
         num_conformers: int = 250,
-        rdkit_ff_type: str = "MMFF",
+        rdkit_ff_type: Literal["MMFF", "UFF"] = "MMFF",
         refine_with_crest: bool = False,
         spin: float = 0.0,
     ) -> Tuple[List[str], np.ndarray]:
