@@ -1,8 +1,10 @@
 * [Install](./section/note/install.md)
 
-* [Python API](./section/use/api.md)
+* [Python API list](./section/use/api.md)
 
 * [Command-line interface](./section/use/cli.md)
+
+* [Web user interface](https://github.com/Augus1999/ChemBFN-WebUI) (separated project)
 
 * [Publications](./section/note/publication.md)
 
