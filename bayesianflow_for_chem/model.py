@@ -1171,6 +1171,9 @@ class EnsembleChemBFN(ChemBFN):
         assert (
             isinstance(c, dict) is self._label_is_dict
         ), f"`c` should be a {'`dict` instance' if self._label_is_dict else '`list` instance'} but got {type(c)} instand."
+        assert len(c) == len(
+            self.models
+        ), f"Number of conditions should match the number of LoRA models. We have {len(self.models)} LoRA models but {len(c)} conditions were provided."
         out: Dict[str, Tensor] = {}
         if isinstance(c, list):
             c = dict(zip([f"val_{i}" for i in range(len(c))], c))

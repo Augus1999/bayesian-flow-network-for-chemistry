@@ -696,7 +696,7 @@ def main_script(version: str) -> None:
         with open(runtime_config["inference"]["result_file"], "w") as f:
             f.write("\n".join(mols))
     # ------- finished -------
-    print(" ####### job finished #######")
+    print("*" * 25 + " job finished " + "*" * 25)
     print(_END_MESSAGE)
 
 
