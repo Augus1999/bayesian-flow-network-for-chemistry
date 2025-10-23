@@ -4,7 +4,7 @@
 
 * [Command-line interface](./section/use/cli.md)
 
-* [Web user interface](https://github.com/Augus1999/ChemBFN-WebUI) (separated project)
+* <a href="https://github.com/Augus1999/ChemBFN-WebUI" target="_blank">Web user interface</a> (separate project)
 
 * [Publications](./section/note/publication.md)
 
