@@ -43,7 +43,7 @@ trainer = L.Trainer(
 
 
 if __name__ == "__main__":
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:64"
+    os.environ["PYTORCH_ALLOC_CONF"] = "max_split_size_mb:64"
     dataset = CSVData(args.datafile)
     dataset.map(lambda x: {"token": smiles2token(".".join(x["smiles"]))})
     data = DataLoader(dataset, 512, True, collate_fn=collate)

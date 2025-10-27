@@ -97,7 +97,7 @@ trainer = L.Trainer(
 
 if __name__ == "__main__":
     os.environ["MAX_PADDING_LENGTH"] = f"{pad_len}"  # set the global padding length
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:64"
+    os.environ["PYTORCH_ALLOC_CONF"] = "max_split_size_mb:64"
     train_dataloader = DataLoader(
         dataset=train_data,
         batch_size=120,  # reduce batch-size if your GPU has less than 5GB of VRAM

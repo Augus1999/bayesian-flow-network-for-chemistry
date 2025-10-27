@@ -569,7 +569,7 @@ def main_script(version: str) -> None:
         model = Model(bfn, mlp, scorer)
         model.model.semi_autoregressive = runtime_config["train"]["semi_autoregressive"]
         # ####### strat training #######
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
+        os.environ["PYTORCH_ALLOC_CONF"] = "max_split_size_mb:128"
         if not runtime_config["train"]["dynamic_padding"]:
             os.environ["MAX_PADDING_LENGTH"] = f"{lmax}"  # important!
         torch.set_float32_matmul_precision("medium")
