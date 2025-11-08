@@ -164,7 +164,7 @@ def _save_job_info(
     runtime_config: Dict[str, Dict], model_config: Dict[str, Dict], save_path: Path
 ) -> None:
     fn = (
-        save_path / f"job_info_{datetime.datetime.now().strftime(r"%Y%m%d%H%M%S")}.json"
+        save_path / f"job_info_{datetime.datetime.now().strftime(r'%Y%m%d%H%M%S')}.json"
     )
     with open(fn, "w", encoding="utf-8") as f:
         json.dump(
