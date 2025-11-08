@@ -78,7 +78,7 @@ restart = ""  # or a checkpoint file in absolute path
 dataset = "home/user/project/dataset/qm9.csv"
 molecule_tag = "smiles"
 objective_tag = ["homo", "lumo", "gap"]  # set to empty array [] if it is not needed
-enforce_validity = true  # must be false if SMILES is not used
+enforce_validity = true  # must be false if SMILES or SAFE is not used
 logger_name = "wandb"  # or "csv", "tensorboard"
 logger_path = "home/user/project/logs"
 checkpoint_save_path = "home/user/project/ckpt"
@@ -158,6 +158,21 @@ def _load_plugin(plugin_file: str) -> Dict[str, Union[int, Callable, object, Non
         else:
             plugin_dict[n] = None
     return plugin_dict
+
+
+def _save_job_info(
+    runtime_config: Dict[str, Dict], model_config: Dict[str, Dict], save_path: Path
+) -> None:
+    fn = (
+        save_path / f"job_info_{datetime.datetime.now().strftime(r"%Y%m%d%H%M%S")}.json"
+    )
+    with open(fn, "w", encoding="utf-8") as f:
+        json.dump(
+            {"runtime_config": runtime_config, "model_config": model_config},
+            f,
+            indent=4,
+        )
+    print(f"Job information saved to {fn.absolute()}.")
 
 
 def parse_cli(version: str) -> argparse.Namespace:
@@ -275,7 +290,7 @@ def load_runtime_config(
         )
         flag_critical += 1
     if tokeniser_name == "selfies":
-        vocab = config["tokeniser"]["vocab"]
+        vocab: str = config["tokeniser"]["vocab"]
         if vocab.lower() == "default":
             print(
                 f"\033[0;31mCritical\033[0;0m in {config_file}: You should specify a vocabulary file."
@@ -315,12 +330,18 @@ def load_runtime_config(
                 )
                 flag_critical += 1
     if "inference" in config:
+        sequence_length = config["inference"]["sequence_length"]
         if not "train" in config:
-            if not isinstance(config["inference"]["sequence_length"], int):
+            if not isinstance(sequence_length, int):
                 print(
                     f"\033[0;31mCritical\033[0;0m in {config_file}: You must set an integer for sequence_length."
                 )
                 flag_critical += 1
+        if isinstance(sequence_length, str) and sequence_length != "match dataset":
+            print(
+                f"\033[0;31mCritical\033[0;0m in {config_file}: What do you mean by 'sequence_length = {sequence_length}'?"
+            )
+            flag_critical += 1
         if config["inference"]["guidance_objective"]:
             if not "guidance_objective_strength" in config["inference"]:
                 print(
@@ -415,8 +436,9 @@ def main_script(version: str) -> None:
     if flag_critical != 0:
         raise RuntimeError(_ERROR_MESSAGE)
     print(_MESSAGE.format(version))
+    _save_job_info(runtime_config, model_config, Path(parser.config).parent)
     # ####### build tokeniser #######
-    tokeniser_config = runtime_config["tokeniser"]
+    tokeniser_config: str = runtime_config["tokeniser"]
     tokeniser_name = tokeniser_config["name"].lower()
     if tokeniser_name == "smiles" or tokeniser_name == "safe":
         num_vocab = VOCAB_COUNT
@@ -537,7 +559,7 @@ def main_script(version: str) -> None:
             logger = loggers.WandbLogger(
                 runtime_config["run_name"],
                 runtime_config["train"]["logger_path"],
-                datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
+                datetime.datetime.now().strftime(r"%Y%m%d%H%M%S"),
                 project="ChemBFN",
                 job_type="train",
             )
@@ -545,13 +567,13 @@ def main_script(version: str) -> None:
             logger = loggers.TensorBoardLogger(
                 runtime_config["train"]["logger_path"],
                 runtime_config["run_name"],
-                datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
+                datetime.datetime.now().strftime(r"%Y%m%d%H%M%S"),
             )
         if logger_name == "csv":
             logger = loggers.CSVLogger(
                 runtime_config["train"]["logger_path"],
                 runtime_config["run_name"],
-                datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
+                datetime.datetime.now().strftime(r"%Y%m%d%H%M%S"),
             )
         trainer = L.Trainer(
             max_epochs=runtime_config["train"]["epoch"],
