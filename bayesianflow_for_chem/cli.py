@@ -162,10 +162,10 @@ def _load_plugin(plugin_file: str) -> Dict[str, Union[int, Callable, object, Non
 
 def _save_job_info(
     runtime_config: Dict[str, Dict], model_config: Dict[str, Dict], save_path: Path
-) -> None:
-    fn = (
-        save_path / f"job_info_{datetime.datetime.now().strftime(r'%Y%m%d%H%M%S')}.json"
-    )
+) -> str:
+    # Save config and return an unique time stamp.
+    time_stamp = datetime.datetime.now().strftime(r"%Y%m%d%H%M%S")
+    fn = save_path / f"job_info_{time_stamp}.json"
     with open(fn, "w", encoding="utf-8") as f:
         json.dump(
             {"runtime_config": runtime_config, "model_config": model_config},
@@ -173,6 +173,7 @@ def _save_job_info(
             indent=4,
         )
     print(f"Job information saved to {fn.absolute()}.")
+    return time_stamp
 
 
 def parse_cli(version: str) -> argparse.Namespace:
@@ -436,7 +437,9 @@ def main_script(version: str) -> None:
     if flag_critical != 0:
         raise RuntimeError(_ERROR_MESSAGE)
     print(_MESSAGE.format(version))
-    _save_job_info(runtime_config, model_config, Path(parser.config).parent)
+    time_stamp = _save_job_info(
+        runtime_config, model_config, Path(parser.config).parent
+    )
     # ####### build tokeniser #######
     tokeniser_config: str = runtime_config["tokeniser"]
     tokeniser_name = tokeniser_config["name"].lower()
@@ -559,7 +562,7 @@ def main_script(version: str) -> None:
             logger = loggers.WandbLogger(
                 runtime_config["run_name"],
                 runtime_config["train"]["logger_path"],
-                datetime.datetime.now().strftime(r"%Y%m%d%H%M%S"),
+                time_stamp,
                 project="ChemBFN",
                 job_type="train",
             )
@@ -567,13 +570,13 @@ def main_script(version: str) -> None:
             logger = loggers.TensorBoardLogger(
                 runtime_config["train"]["logger_path"],
                 runtime_config["run_name"],
-                datetime.datetime.now().strftime(r"%Y%m%d%H%M%S"),
+                time_stamp,
             )
         if logger_name == "csv":
             logger = loggers.CSVLogger(
                 runtime_config["train"]["logger_path"],
                 runtime_config["run_name"],
-                datetime.datetime.now().strftime(r"%Y%m%d%H%M%S"),
+                time_stamp,
             )
         trainer = L.Trainer(
             max_epochs=runtime_config["train"]["epoch"],
