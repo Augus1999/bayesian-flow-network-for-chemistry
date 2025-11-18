@@ -379,6 +379,14 @@ def _encode(
         for i in obj_tag:
             obj.extend([float(j) for j in x[i]])
         encoded["value"] = torch.tensor(obj, dtype=torch.float32)
+    if "mask" in x and not "mask" in obj_tag:
+        import numpy as np
+
+        mask = x["mask"]
+        if torch.is_tensor(mask):
+            encoded["mask"] = mask
+        elif isinstance(mask, (list, tuple, np.ndarray)):
+            encoded["mask"] = torch.tensor(mask, dtype=torch.float32)
     return encoded
 
 
@@ -514,23 +522,6 @@ def main_script(version: str) -> None:
         mol_tag = runtime_config["train"]["molecule_tag"]
         obj_tag = runtime_config["train"]["objective_tag"]
         dataset_file = runtime_config["train"]["dataset"]
-        if plugins["max_sequence_length"]:
-            lmax = plugins["max_sequence_length"]
-        else:
-            with open(dataset_file, "r") as db:
-                _data = db.readlines()
-            _header = _data[0]
-            _mol_idx = []
-            for i, tag in enumerate(_header.replace("\n", "").split(",")):
-                if tag == mol_tag:
-                    _mol_idx.append(i)
-            _data_len = []
-            for i in _data[1:]:
-                i = i.replace("\n", "").split(",")
-                _mol = ".".join([i[j] for j in _mol_idx])
-                _data_len.append(tokeniser(_mol).shape[-1])
-            lmax = max(_data_len)
-            del _data, _data_len, _header, _mol_idx  # clear memory
         if plugins["CustomData"] is not None:
             dataset = plugins["CustomData"](dataset_file)
         else:
@@ -538,6 +529,10 @@ def main_script(version: str) -> None:
         dataset.map(
             partial(_encode, mol_tag=mol_tag, obj_tag=obj_tag, tokeniser=tokeniser)
         )
+        if plugins["max_sequence_length"]:
+            lmax = plugins["max_sequence_length"]
+        else:
+            lmax = max([i["token"].shape[-1] for i in dataset])
         dataloader = DataLoader(
             dataset,
             runtime_config["train"]["batch_size"],
@@ -594,6 +589,9 @@ def main_script(version: str) -> None:
         model = Model(bfn, mlp, scorer)
         model.model.semi_autoregressive = runtime_config["train"]["semi_autoregressive"]
         # ####### strat training #######
+        import gc
+
+        gc.collect()
         os.environ["PYTORCH_ALLOC_CONF"] = "max_split_size_mb:128"
         if not runtime_config["train"]["dynamic_padding"]:
             os.environ["MAX_PADDING_LENGTH"] = f"{lmax}"  # important!
