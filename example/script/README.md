@@ -18,9 +18,9 @@ $ python run_zinc250k.py --datadir={YOUR_ZINC250K_DATASET_FOLDER} --train_mode={
 You can switch to the SELFIES version by using flag `--version=selfies`, but the package `selfies` is required.
 
 
-## JIT version?
+## JIT version _v.s._ AOT version
 
-Our implementation supports TorchScript.
+Since `torch.jit.script` is deprecated, we recommand to use `torch.compile(...)` instead.
 ```python
 import torch
 from bayesianflow_for_chem import ChemBFN
@@ -28,8 +28,7 @@ from bayesianflow_for_chem.data import smiles2vec
 from bayesianflow_for_chem.tool import sample, inpaint
 
 model = ChemBFN.from_checkpoint("YOUR_MODEL.pt").eval().to("cuda")
-model = torch.jit.freeze(torch.jit.script(model), ["sample", "inpaint", "ode_sample", "ode_inpaint"])
-# or model.compile()
+model.compile()
 # ------- generate molecules -------
 smiles = sample(model, 1, 60, 100, method="ODE:0.5")  # or `method="BFN"`
 # ------- inpaint (sacffold extension) -------
@@ -38,6 +37,8 @@ x = torch.tensor([1] + smiles2vec(scaffold) + [0] * (84 - len(scaffold)), dtype=
 x = x[None, ...].repeat(5, 1).to("cuda")
 smiles = inpaint(model, x, 100)
 ```
+
+Our model can be fully traced and captured into a graph, however, `torch.export.export(...)` does not work as we have few esscential values and methods that are not directly used in `forward` path.
 
 ## SAR version?
 

@@ -1427,6 +1427,14 @@ class EnsembleChemBFN(ChemBFN):
         :return:
         :rtype: None
         """
+        import warnings
+
+        warnings.warn(
+            "JIT via `torch.jit.script` is deprecated and will be removed."
+            "Using `torch.compile(...) instead.",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
         for k, v in self.models.items():
             self.models[k] = torch.jit.script(v)
             if freeze:

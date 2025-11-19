@@ -54,7 +54,17 @@ def _parse_and_assert_param(
     return None
 
 
-def _map_to_device(
+def _map_model_to_device(
+    model: Union[ChemBFN, EnsembleChemBFN, MLP, torch.fx.GraphModule],
+    device: Union[str, torch.device],
+):
+    if isinstance(model, torch.fx.GraphModule):
+        return model.to(device)
+    else:
+        return model.to(device).eval()
+
+
+def _map_value_to_device(
     y: Optional[Union[Tensor, Dict[str, Tensor], List[Tensor]]],
     device: Union[str, torch.device],
 ) -> Optional[Union[Tensor, Dict[str, Tensor], List[Tensor]]]:
@@ -98,6 +108,24 @@ def _token_to_seq(
     ]
 
 
+def _inference(
+    model: Union[ChemBFN, torch.fx.GraphModule],
+    mlp: Union[MLP, torch.fx.GraphModule],
+    x: Tensor,
+) -> Tensor:
+    if isinstance(model, torch.fx.GraphModule):
+        import os
+
+        graphmodule_sar_flag = os.environ.get("GRAPHMODULE_SAR_FLAG", "0") != "0"
+        t = torch.ones((x.shape[0], 1, 1), device=x.device)
+        mask = (x != 0).float()[..., None]
+        theta = torch.nn.functional.one_hot(x, model.embedding.weight.shape[-1])
+        z = model.forward(2 * theta.float() - 1, t, mask, None)
+        mb = z[x == 2].view(z.shape[0], -1) if graphmodule_sar_flag else z[::, 0]
+        return mlp.forward(mb)
+    return model.inference(x, mlp)
+
+
 @torch.no_grad()
 def test(
     model: ChemBFN,
@@ -107,7 +135,9 @@ def test(
     device: Union[str, torch.device, None] = None,
 ) -> Dict[str, float]:
     """
-    Test the trained network.
+    Test the trained network. \n
+    Note: If your model is a `~torch.fx.GraphModule` instance exported via `torch.export.export(...)`,
+    set environment variable GRAPHMODULE_SAR_FLAG="1" to enable semi-autoregressive behaviour.
 
     :param model: pretrained ChemBFN model
     :param mlp: trained MLP model for testing
@@ -124,17 +154,19 @@ def test(
     """
     if device is None:
         device = _find_device()
-    model.to(device).eval()
-    mlp.to(device).eval()
+    model = _map_model_to_device(model, device)
+    mlp = _map_model_to_device(mlp, device)
     predict_y, label_y = [], []
     for d in data:
         x, y = d["token"].to(device), d["value"]
         label_y.append(y)
         if mode == "regression":
-            y_hat = model.inference(x, mlp)
+            # y_hat = model.inference(x, mlp)
+            y_hat = _inference(model, mlp, x)
         if mode == "classification":
             n_b, n_y = y.shape
-            y_hat = softmax(model.inference(x, mlp).reshape(n_b * n_y, -1), -1)
+            # y_hat = softmax(model.inference(x, mlp).reshape(n_b * n_y, -1), -1)
+            y_hat = softmax(_inference(model, mlp, x).reshape(n_b * n_y, -1), -1)
             y_hat = y_hat.reshape(n_b, -1)
         predict_y.append(y_hat.detach().to("cpu"))
     predict_y, label_y = torch.cat(predict_y, 0), torch.cat(label_y, 0).split(1, -1)
@@ -312,8 +344,8 @@ def sample(
     """
     tp = _parse_and_assert_param(model, y, method)
     device = _find_device() if device is None else device
-    model.to(device).eval()
-    y = _map_to_device(y, device)
+    model = _map_model_to_device(model, device)
+    y = _map_value_to_device(y, device)
     token_mask = _build_token_mask(allowed_tokens, vocab_keys, device)
     if tp:
         tokens, entropy = model.ode_sample(
@@ -372,9 +404,9 @@ def inpaint(
     """
     tp = _parse_and_assert_param(model, y, method)
     device = _find_device() if device is None else device
-    model.to(device).eval()
-    x = x.to(device)
-    y = _map_to_device(y, device)
+    model = _map_model_to_device(model, device)
+    x = _map_value_to_device(x, device)
+    y = _map_value_to_device(y, device)
     token_mask = _build_token_mask(allowed_tokens, vocab_keys, device)
     if tp:
         tokens, entropy = model.ode_inpaint(
@@ -433,9 +465,9 @@ def optimise(
     """
     tp = _parse_and_assert_param(model, y, method)
     device = _find_device() if device is None else device
-    model.to(device).eval()
-    x = x.to(device)
-    y = _map_to_device(y, device)
+    model = _map_model_to_device(model, device)
+    x = _map_value_to_device(x, device)
+    y = _map_value_to_device(y, device)
     token_mask = _build_token_mask(allowed_tokens, vocab_keys, device)
     if tp:
         tokens, entropy = model.ode_optimise(
