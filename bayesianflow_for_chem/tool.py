@@ -10,18 +10,18 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Union, Optional, Literal
 import torch
 import numpy as np
-from torch import cuda, Tensor, softmax
+from torch import Tensor, softmax
 from torch.utils.data import DataLoader
 from rdkit.Chem import (
     rdDetermineBonds,
+    AllChem,
+    Mol,
     GetFormalCharge,
     MolFromXYZBlock,
     MolFromSmiles,
     MolToSmiles,
     CanonSmiles,
-    AllChem,
     AddHs,
-    Mol,
 )
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from .data import VOCAB_KEYS
@@ -29,10 +29,13 @@ from .model import ChemBFN, MLP, EnsembleChemBFN
 
 
 def _find_device() -> torch.device:
-    if cuda.is_available():
+    if torch.cuda.is_available():
         return torch.device("cuda")
-    elif torch.backends.mps.is_available():
+    elif torch.mps.is_available():
         return torch.device("mps")
+    elif torch.xpu.is_available():
+        return torch.device("xpu")
+    # TODO: waiting for a native way to use xla devices
     return torch.device("cpu")
 
 
