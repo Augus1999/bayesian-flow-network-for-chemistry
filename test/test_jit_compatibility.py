@@ -26,9 +26,9 @@ def test():
         x2 = model.forward(*example_args)
         assert (x2 != x1).float().sum() == 0
     except RuntimeError as e:
-        if "not supported " in e:
+        if "not supported " in e.__str__():
             import warnings
 
-            warnings.warn(e, category=RuntimeWarning)
+            warnings.warn(str(e), category=RuntimeWarning)
         else:
-            raise RuntimeError(e)
+            raise RuntimeError(str(e))
