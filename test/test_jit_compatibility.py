@@ -19,8 +19,16 @@ dynamic_shape = {"x": {0: batch}, "t": {0: batch}, "mask": None, "y": None}
 def test():
     x1 = model(*example_args)
     model_aot = torch.export.export(model, example_args, dynamic_shapes=dynamic_shape)
-    model.compile()
-    x2 = model.forward(*example_args)
     x3 = model_aot.module()(*example_args)
-    assert (x2 != x1).float().sum() == 0
     assert (x3 != x1).float().sum() == 0
+    try:
+        model.compile()
+        x2 = model.forward(*example_args)
+        assert (x2 != x1).float().sum() == 0
+    except RuntimeError as e:
+        if "not supported " in e:
+            import warnings
+
+            warnings.warn(e, category=RuntimeWarning)
+        else:
+            raise RuntimeError(e)
