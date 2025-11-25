@@ -588,7 +588,7 @@ def main_script(version: str) -> None:
             bfn.enable_lora(bfn.hparam["channel"] // 128)
         model = Model(bfn, mlp, scorer)
         model.model.semi_autoregressive = runtime_config["train"]["semi_autoregressive"]
-        # ####### strat training #######
+        # ####### start training #######
         import gc
 
         gc.collect()
@@ -629,7 +629,7 @@ def main_script(version: str) -> None:
             mlp = model.mlp
         # ↓ added in v2.1.0; need to be compatible with old versions
         lora_scaling = runtime_config["inference"].get("lora_scaling", 1.0)
-        # ####### strat inference #######
+        # ####### start inference #######
         bfn.semi_autoregressive = runtime_config["inference"]["semi_autoregressive"]
         _device = (
             None if runtime_config["device"] == "auto" else runtime_config["device"]

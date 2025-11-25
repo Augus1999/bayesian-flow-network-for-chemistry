@@ -102,10 +102,6 @@ _class_ bayesianflow_for_chem.__EnsembleChemBFN__(_base_model_path_, _lora_paths
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Quantise the submodels.
 
-&nbsp;&nbsp;&nbsp; __jit__(_freeze=False_) &#8594; None
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; [Deprecated] JIT compile the submodels.
-
 ### Scorer
 
 bayesianflow_for_chem.scorer.__smiles_valid__(_smiles_) &#8594; int

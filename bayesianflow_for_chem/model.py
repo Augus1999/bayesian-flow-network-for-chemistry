@@ -744,7 +744,7 @@ class ChemBFN(nn.Module):
             p = p.masked_fill_(token_mask, 0.0)
         return torch.argmax(p, -1), entropy
 
-    @torch.jit.export
+    @torch.inference_mode()
     def sample(
         self,
         batch_size: int,
@@ -780,7 +780,7 @@ class ChemBFN(nn.Module):
         )
         return self._process(theta, None, y, sample_step, guidance_strength, token_mask)
 
-    @torch.jit.export
+    @torch.inference_mode()
     def ode_sample(
         self,
         batch_size: int,
@@ -818,7 +818,7 @@ class ChemBFN(nn.Module):
             z, None, y, sample_step, guidance_strength, token_mask, temperature
         )
 
-    @torch.jit.export
+    @torch.inference_mode()
     def inpaint(
         self,
         x: Tensor,
@@ -853,7 +853,7 @@ class ChemBFN(nn.Module):
         mask = (x_onehot, x_mask)
         return self._process(theta, mask, y, sample_step, guidance_strength, token_mask)
 
-    @torch.jit.export
+    @torch.inference_mode()
     def ode_inpaint(
         self,
         x: Tensor,
@@ -892,7 +892,7 @@ class ChemBFN(nn.Module):
             z, mask, y, sample_step, guidance_strength, token_mask, temperature
         )
 
-    @torch.jit.export
+    @torch.inference_mode()
     def optimise(
         self,
         x: Tensor,
@@ -924,7 +924,7 @@ class ChemBFN(nn.Module):
         theta = softmax(x_onehot, -1)
         return self._process(theta, None, y, sample_step, guidance_strength, token_mask)
 
-    @torch.jit.export
+    @torch.inference_mode()
     def ode_optimise(
         self,
         x: Tensor,
@@ -1021,12 +1021,6 @@ class ChemBFN(nn.Module):
 
 
 class EnsembleChemBFN(ChemBFN):
-    """
-    This module does not fully support `torch.jit.script`. We have `EnsembleChemBFN.jit()`
-    method to JIT compile the submodels.
-    `torch.compile()` is a better choice to compiling the whole model.
-    """
-
     def __init__(
         self,
         base_model_path: Union[str, Path],
@@ -1418,33 +1412,6 @@ class EnsembleChemBFN(ChemBFN):
         for _, v in self.models.items():
             quantise_method(v)
 
-    def jit(self, freeze: bool = False) -> None:
-        """
-        JIT compile the submodels. \n
-        This method should be called, if necessary, before `quantise()` method is called if applied.
-
-        :param freeze: whether to freeze the submodels; default is `False`. If set to `True` this
-                       method should be called before moving the model to a different device.
-        :type freeze: bool
-        :return:
-        :rtype: None
-        """
-        import warnings
-
-        warnings.warn(
-            "JIT via `torch.jit.script` is deprecated and will be removed."
-            "Using `torch.compile(...) instead.",
-            category=DeprecationWarning,
-            stacklevel=2,
-        )
-        for k, v in self.models.items():
-            self.models[k] = torch.jit.script(v)
-            if freeze:
-                self.models[k] = torch.jit.freeze(
-                    self.models[k], ["semi_autoregressive"]
-                )
-
-    @torch.jit.ignore
     def forward(self, *_, **__) -> None:
         """
         Don't use this method!
