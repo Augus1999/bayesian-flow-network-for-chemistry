@@ -47,7 +47,7 @@ You can find example scripts in [📁example](./example) folder.
 
 ## Pre-trained Model
 
-You can find pretrained models on our [🤗Hugging Face model page](https://huggingface.co/suenoomozawa/ChemBFN).
+You can find pretrained models (linked to pretraining datasets) on our [🤗Hugging Face model page](https://huggingface.co/suenoomozawa/ChemBFN).
 
 ## Dataset Handling
 
