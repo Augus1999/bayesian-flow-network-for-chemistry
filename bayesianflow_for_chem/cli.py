@@ -166,13 +166,19 @@ def _save_job_info(
     # Save config and return an unique time stamp.
     time_stamp = datetime.datetime.now().strftime(r"%Y%m%d%H%M%S")
     fn = save_path / f"job_info_{time_stamp}.json"
-    with open(fn, "w", encoding="utf-8") as f:
-        json.dump(
-            {"runtime_config": runtime_config, "model_config": model_config},
-            f,
-            indent=4,
-        )
-    print(f"Job information saved to {fn.absolute()}.")
+    from lightning.pytorch.utilities import rank_zero_only, rank_zero_info
+
+    @rank_zero_only
+    def _save() -> None:
+        with open(fn, "w", encoding="utf-8") as f:
+            json.dump(
+                {"runtime_config": runtime_config, "model_config": model_config},
+                f,
+                indent=4,
+            )
+        rank_zero_info(f"Job information saved to {fn.absolute()}.")
+
+    _save()
     return time_stamp
 
 
@@ -444,7 +450,9 @@ def main_script(version: str) -> None:
         return
     if flag_critical != 0:
         raise RuntimeError(_ERROR_MESSAGE)
-    print(_MESSAGE.format(version))
+    from lightning.pytorch.utilities import rank_zero_info
+
+    rank_zero_info(_MESSAGE.format(version))
     time_stamp = _save_job_info(
         runtime_config, model_config, Path(parser.config).parent
     )
@@ -719,8 +727,8 @@ def main_script(version: str) -> None:
         with open(runtime_config["inference"]["result_file"], "w") as f:
             f.write("\n".join(mols))
     # ------- finished -------
-    print("*" * 25 + " job finished " + "*" * 25)
-    print(_END_MESSAGE)
+    rank_zero_info("*" * 25 + " job finished " + "*" * 25)
+    rank_zero_info(_END_MESSAGE)
 
 
 if __name__ == "__main__":
