@@ -13,6 +13,7 @@ from functools import partial
 from typing import List, Tuple, Dict, Union, Callable
 import torch
 from rdkit.Chem import MolFromSmiles, CanonSmiles
+from lightning.pytorch.utilities import rank_zero_info, rank_zero_only
 from bayesianflow_for_chem import ChemBFN, MLP
 from bayesianflow_for_chem.scorer import smiles_valid, Scorer
 from bayesianflow_for_chem.data import (
@@ -166,7 +167,6 @@ def _save_job_info(
     # Save config and return an unique time stamp.
     time_stamp = datetime.datetime.now().strftime(r"%Y%m%d%H%M%S")
     fn = save_path / f"job_info_{time_stamp}.json"
-    from lightning.pytorch.utilities import rank_zero_only, rank_zero_info
 
     @rank_zero_only
     def _save() -> None:
@@ -244,7 +244,7 @@ def load_model_config(
         model_config = tomllib.load(f)
     if model_config["ChemBFN"]["num_vocab"] != "match vocabulary size":
         if not isinstance(model_config["ChemBFN"]["num_vocab"], int):
-            print(
+            rank_zero_info(
                 f"\033[0;31mCritical\033[0;0m in {config_file}: You must specify num_vocab."
             )
             flag_critical += 1
@@ -252,7 +252,7 @@ def load_model_config(
         model_file = model_config["ChemBFN"]["base_model"]
         for fn in model_file:
             if not os.path.exists(fn):
-                print(
+                rank_zero_info(
                     f"\033[0;31mCritical\033[0;0m in {config_file}: Base model file {fn} does not exist."
                 )
                 flag_critical += 1
@@ -260,14 +260,14 @@ def load_model_config(
         a = model_config["ChemBFN"]["channel"]
         b = model_config["MLP"]["size"][-1]
         if a != b:
-            print(
+            rank_zero_info(
                 f"\033[0;31mCritical\033[0;0m in {config_file}: MLP hidden size {b} should match ChemBFN hidden size {a}."
             )
             flag_critical += 1
         if model_config["MLP"]["base_model"]:
             model_file = model_config["MLP"]["base_model"]
             if not os.path.exists(model_file):
-                print(
+                rank_zero_info(
                     f"\033[0;31mCritical\033[0;0m in {config_file}: Base model file {fn} does not exist."
                 )
                 flag_critical += 1
@@ -292,39 +292,39 @@ def load_runtime_config(
         config = tomllib.load(f)
     tokeniser_name = config["tokeniser"]["name"].lower()
     if not tokeniser_name in "smiles selfies safe fasta".split():
-        print(
+        rank_zero_info(
             f"\033[0;31mCritical\033[0;0m in {config_file}: Unknown tokensier name: {tokeniser_name}."
         )
         flag_critical += 1
     if tokeniser_name == "selfies":
         vocab: str = config["tokeniser"]["vocab"]
         if vocab.lower() == "default":
-            print(
+            rank_zero_info(
                 f"\033[0;31mCritical\033[0;0m in {config_file}: You should specify a vocabulary file."
             )
             flag_critical += 1
         elif not os.path.exists(vocab):
-            print(
+            rank_zero_info(
                 f"\033[0;31mCritical\033[0;0m in {config_file}: Vocabulary file {vocab} does not exist."
             )
             flag_critical += 1
     if "train" in config:
         dataset_file = config["train"]["dataset"]
         if not os.path.exists(dataset_file):
-            print(
+            rank_zero_info(
                 f"\033[0;31mCritical\033[0;0m in {config_file}: Dataset file {dataset_file} does not exist."
             )
             flag_critical += 1
         logger_name = config["train"]["logger_name"].lower()
         if not logger_name in "csv tensorboard wandb".split():
-            print(
+            rank_zero_info(
                 f"\033[0;31mCritical\033[0;0m in {config_file}: Unknown logger: {logger_name}."
             )
             flag_critical += 1
         if config["train"]["restart"]:
             ckpt_file = config["train"]["restart"]
             if not os.path.exists(ckpt_file):
-                print(
+                rank_zero_info(
                     f"\033[0;31mCritical\033[0;0m in {config_file}: Restart checkpoint file {ckpt_file} does not exist."
                 )
                 flag_critical += 1
@@ -332,7 +332,7 @@ def load_runtime_config(
         plugin_script: str = config["train"].get("plugin_script", "")
         if plugin_script:
             if not os.path.exists(plugin_script):
-                print(
+                rank_zero_info(
                     f"\033[0;31mCritical\033[0;0m in {config_file}: Plugin script {plugin_script} does not exist."
                 )
                 flag_critical += 1
@@ -340,24 +340,24 @@ def load_runtime_config(
         sequence_length = config["inference"]["sequence_length"]
         if not "train" in config:
             if not isinstance(sequence_length, int):
-                print(
+                rank_zero_info(
                     f"\033[0;31mCritical\033[0;0m in {config_file}: You must set an integer for sequence_length."
                 )
                 flag_critical += 1
         if isinstance(sequence_length, str) and sequence_length != "match dataset":
-            print(
+            rank_zero_info(
                 f"\033[0;31mCritical\033[0;0m in {config_file}: What do you mean by 'sequence_length = {sequence_length}'?"
             )
             flag_critical += 1
         if config["inference"]["guidance_objective"]:
             if not "guidance_objective_strength" in config["inference"]:
-                print(
+                rank_zero_info(
                     f"\033[0;31mCritical\033[0;0m in {config_file}: You need to add guidance_objective_strength."
                 )
                 flag_critical += 1
         result_dir = Path(config["inference"]["result_file"]).parent
         if not os.path.exists(result_dir):
-            print(
+            rank_zero_info(
                 f"\033[0;33mWarning\033[0;0m in {config_file}: Directory {result_dir} to save the result does not exist."
             )
             flag_warning += 1
@@ -365,7 +365,7 @@ def load_runtime_config(
             config["inference"]["guidance_scaffold"] != ""
             and config["inference"]["sample_template"] != ""
         ):
-            print(
+            rank_zero_info(
                 f"\033[0;33mWarning\033[0;0m in {config_file}: Inpaint task or mol2mol task?"
             )
             flag_warning += 1
@@ -413,7 +413,7 @@ def main_script(version: str) -> None:
     if "train" in runtime_config:
         if runtime_config["train"]["enable_lora"]:
             if not model_config["ChemBFN"]["base_model"]:
-                print(
+                rank_zero_info(
                     f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained model first."
                 )
                 flag_warning += 1
@@ -422,36 +422,34 @@ def main_script(version: str) -> None:
                 os.makedirs(runtime_config["train"]["checkpoint_save_path"])
     else:
         if not model_config["ChemBFN"]["base_model"]:
-            print(
+            rank_zero_info(
                 f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained ChemBFN model."
             )
             flag_warning += 1
         if "MLP" in model_config and not model_config["MLP"]["base_model"]:
-            print(
+            rank_zero_info(
                 f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained MLP."
             )
             flag_warning += 1
     if "inference" in runtime_config:
         if runtime_config["inference"]["guidance_objective"]:
             if not "MLP" in model_config:
-                print(
+                rank_zero_info(
                     f"\033[0;33mWarning\033[0;0m in {parser.model_config}: Oh no, you don't have a MLP."
                 )
                 flag_warning += 1
     if parser.dryrun:
         if flag_critical != 0:
-            print("Configuration check failed!")
+            rank_zero_info("Configuration check failed!")
         elif flag_warning != 0:
-            print(
+            rank_zero_info(
                 "Your job will probably run, but it may not follow your expectations."
             )
         else:
-            print("Configuration check passed.")
+            rank_zero_info("Configuration check passed.")
         return
     if flag_critical != 0:
         raise RuntimeError(_ERROR_MESSAGE)
-    from lightning.pytorch.utilities import rank_zero_info
-
     rank_zero_info(_MESSAGE.format(version))
     time_stamp = _save_job_info(
         runtime_config, model_config, Path(parser.config).parent
