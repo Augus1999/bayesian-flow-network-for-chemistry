@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Author: Nianze A. Tao (Omozawa Sueno)
 """
-CLI tool should read a provided plugin python script.
+CLI tool should be able to read a provided plugin python script.
 """
 import os
 import shutil

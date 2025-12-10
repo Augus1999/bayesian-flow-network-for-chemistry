@@ -7,7 +7,7 @@ import csv
 import random
 import warnings
 from pathlib import Path
-from typing import List, Dict, Tuple, Union, Optional, Literal
+from typing import List, Tuple, Dict, Any, Union, Optional, Literal, Callable
 import torch
 import numpy as np
 from torch import Tensor, softmax
@@ -136,7 +136,8 @@ def test(
     data: DataLoader,
     mode: Literal["regression", "classification"] = "regression",
     device: Union[str, torch.device, None] = None,
-) -> Dict[str, float]:
+    other_metrics: Optional[Dict[str, Callable[[Any, Any], float]]] = None,
+) -> Dict[str, List[float]]:
     """
     Test the trained network. \n
     Note: If your model is a `~torch.fx.GraphModule` instance exported via `torch.export.export(...)`,
@@ -147,14 +148,18 @@ def test(
     :param data: DataLoader instance
     :param mode: testing mode chosen from `'regression'` and `'classification'`
     :param device: hardware accelerator
+    :param other_metrics: a `dict` containing user defined metrics, e.g.,
+                          {"R": r_score}, where `r_score` takes `y_true` and `y_pred` and gives a float
     :type model: bayesianflow_for_chem.model.ChemBFN
     :type mlp: bayesianflow_for_chem.model.MLP
     :type data: torch.utils.data.DataLoader
     :type mode: str
     :type device: str | torch.device | None
-    :return: MAE & RMSE & R^2 / ROC-AUC & PRC-AUC
+    :type other_metrics: dict | None
+    :return: MAE & RMSE & R^2 / ROC-AUC & PRC-AUC + other user defined metrics
     :rtype: dict
     """
+    result = {}
     if device is None:
         device = _find_device()
     model = _map_model_to_device(model, device)
@@ -164,10 +169,10 @@ def test(
         x, y = d["token"].to(device), d["value"]
         label_y.append(y)
         if mode == "regression":
-            # y_hat = model.inference(x, mlp)
             y_hat = _inference(model, mlp, x)
         if mode == "classification":
             n_b, n_y = y.shape
+            # old code as a reference:
             # y_hat = softmax(model.inference(x, mlp).reshape(n_b * n_y, -1), -1)
             y_hat = softmax(_inference(model, mlp, x).reshape(n_b * n_y, -1), -1)
             y_hat = y_hat.reshape(n_b, -1)
@@ -191,7 +196,14 @@ def test(
             root_mean_squared_error(label, predict) for (label, predict) in y_zipped
         ]
         r2 = [r2_score(label, predict) for (label, predict) in y_zipped]
-        return {"MAE": mae, "RMSE": rmse, "R^2": r2}
+        result.update({"MAE": mae, "RMSE": rmse, "R^2": r2})
+        if not other_metrics is None:
+            result.update(
+                {
+                    k: [v(label, predict) for (label, predict) in y_zipped]
+                    for k, v in other_metrics.items()
+                }
+            )
     if mode == "classification":
         from sklearn.metrics import roc_auc_score, auc, precision_recall_curve
 
@@ -215,7 +227,18 @@ def test(
             prc_auc = [auc(recall, precision) for (precision, recall) in prc]
         except ValueError:
             prc_auc = []
-        return {"ROC-AUC": roc_auc, "PRC-AUC": prc_auc}
+        result.update({"ROC-AUC": roc_auc, "PRC-AUC": prc_auc})
+        if not other_metrics is None:
+            result.update(
+                {
+                    k: [v(label, predict) for (label, predict) in y_zipped]
+                    for k, v in other_metrics.items()
+                }
+            )
+    return {
+        k: [i.tolist() if isinstance(i, np.floating) else i for i in v]
+        for k, v in result.items()
+    }
 
 
 def split_dataset(

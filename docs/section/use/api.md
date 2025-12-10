@@ -138,7 +138,7 @@ bayesianflow_for_chem.spectra.__spectra_wasserstein_score__(_spectrum_u_, _spect
 
 ### Tool
 
-bayesianflow_for_chem.tool.__test__(_model_, _mlp_, _data_, _mode_, _device=None_) &#8594; dict
+bayesianflow_for_chem.tool.__test__(_model_, _mlp_, _data_, _mode_, _device=None_, _other_metrics=None_) &#8594; dict
 
 &nbsp;&nbsp;&nbsp; Test the trained regression or classification model.
 
