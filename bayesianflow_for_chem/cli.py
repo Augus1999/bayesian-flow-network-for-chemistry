@@ -542,16 +542,10 @@ def main_script(version: str) -> None:
         dataloader = DataLoader(
             dataset,
             runtime_config["train"]["batch_size"],
-            True if plugins["shuffle"] is None else plugins["shuffle"],
-            num_workers=4 if plugins["num_workers"] is None else plugins["num_workers"],
-            collate_fn=(
-                collate if plugins["collate_fn"] is None else plugins["collate_fn"]
-            ),
-            persistent_workers=(
-                True
-                if (plugins["num_workers"] is None or plugins["num_workers"] > 0)
-                else False
-            ),
+            True if (_shuffle := plugins["shuffle"]) is None else _shuffle,
+            num_workers=4 if (nw := plugins["num_workers"]) is None else nw,
+            collate_fn=collate if (cfn := plugins["collate_fn"]) is None else cfn,
+            persistent_workers=True if (nw is None or nw > 0) else False,
         )
         # ####### build trainer #######
         logger_name = runtime_config["train"]["logger_name"].lower()
@@ -606,9 +600,7 @@ def main_script(version: str) -> None:
             model,
             dataloader,
             ckpt_path=(
-                None
-                if not runtime_config["train"]["restart"]
-                else runtime_config["train"]["restart"]
+                None if not (ckptdir := runtime_config["train"]["restart"]) else ckptdir
             ),
         )
         model.export_model(Path(runtime_config["train"]["checkpoint_save_path"]))
@@ -637,9 +629,7 @@ def main_script(version: str) -> None:
         lora_scaling = runtime_config["inference"].get("lora_scaling", 1.0)
         # ####### start inference #######
         bfn.semi_autoregressive = runtime_config["inference"]["semi_autoregressive"]
-        _device = (
-            None if runtime_config["device"] == "auto" else runtime_config["device"]
-        )
+        _device = None if (__device := runtime_config["device"]) == "auto" else __device
         batch_size = runtime_config["inference"]["mini_batch_size"]
         sequence_length = runtime_config["inference"]["sequence_length"]
         if sequence_length == "match dataset":

@@ -960,7 +960,10 @@ class ChemBFN(nn.Module):
         )
 
     def inference(
-        self, x: Tensor, mlp: MLP, embed_fn: Optional[Callable[[Tensor], Tensor]] = None
+        self,
+        x: Tensor,
+        mlp: Union[MLP, nn.Identity],
+        embed_fn: Optional[Callable[[Tensor], Tensor]] = None,
     ) -> Tensor:
         """
         Predict activity/property from molecular tokens.
@@ -972,7 +975,7 @@ class ChemBFN(nn.Module):
                          default `None`
 
         :type x: torch.Tensor
-        :type mlp: bayesianflow_for_chem.model.MLP
+        :type mlp: bayesianflow_for_chem.model.MLP | torch.nn.Identity
         :type embed_fn: callable | None
         :return: output values;  shape: (n_b, n_task)
         :rtype: torch.Tensor
@@ -1043,29 +1046,28 @@ class EnsembleChemBFN(ChemBFN):
         :type adapter_weights: list | dict | None
         :type semi_autoregressive_flags: list | dict | None
         """
-        n = len(lora_paths)
-        assert type(lora_paths) == type(
+        assert (tl := type(lora_paths)) == type(
             cond_heads
         ), "`lora_paths` and `cond_heads` should have the same type!"
-        assert n == len(
+        assert (n := len(lora_paths)) == len(
             cond_heads
         ), "`lora_paths` and `cond_heads` should have the same length!"
         if adapter_weights:
-            assert type(lora_paths) == type(
+            assert tl == type(
                 adapter_weights
             ), "`lora_paths` and `adapter_weights` should have the same type!"
             assert n == len(
                 adapter_weights
             ), "`lora_paths` and `adapter_weights` should have the same length!"
         if semi_autoregressive_flags:
-            assert type(lora_paths) == type(
+            assert tl == type(
                 semi_autoregressive_flags
             ), "`lora_paths` and `semi_autoregressive_flags` should have the same type!"
             assert n == len(
                 semi_autoregressive_flags
             ), "`lora_paths` and `semi_autoregressive_flags` should have the same length!"
         _label_is_dict = isinstance(lora_paths, dict)
-        if isinstance(lora_paths, list):
+        if not isinstance(lora_paths, dict):
             names = tuple(f"val_{i}" for i in range(n))
             lora_paths = dict(zip(names, lora_paths))
             cond_heads = dict(zip(names, cond_heads))
@@ -1165,14 +1167,14 @@ class EnsembleChemBFN(ChemBFN):
         assert (
             isinstance(c, dict) is self._label_is_dict
         ), f"`c` should be a {'`dict` instance' if self._label_is_dict else '`list` instance'} but got {type(c)} instand."
-        assert len(c) == len(self.models), (
+        assert (nc := len(c)) == (nm := len(self.models)), (
             f"Number of conditions should match the number of LoRA models. "
-            f"We have {len(self.models)} LoRA {'model' if len(self.models) in (0, 1) else 'models'} but "
-            f"{len(c)} {'condition' if len(c) in (0, 1) else 'conditions'} {'was' if len(c) in (0, 1) else 'were'} provided."
+            f"We have {nm} LoRA {'model' if nm in (0, 1) else 'models'} but "
+            f"{nc} {'condition' if nc in (0, 1) else 'conditions'} {'was' if nc in (0, 1) else 'were'} provided."
         )
         out: Dict[str, Tensor] = {}
         if isinstance(c, list):
-            c = dict(zip([f"val_{i}" for i in range(len(c))], c))
+            c = dict(zip([f"val_{i}" for i in range(nc)], c))
         for name, model in self.cond_heads.items():
             y = model.forward(c[name])
             if y.dim() == 2:

@@ -271,10 +271,10 @@ def split_dataset(
     for key, h in enumerate(header):
         if "smiles" in h.lower():
             smiles_idx.append(key)
-    assert len(smiles_idx) > 0
+    assert (n_smi := len(smiles_idx)) > 0
     data_len = len(raw_data)
-    train_ratio = split_ratio[0] / sum(split_ratio)
-    test_ratio = sum(split_ratio[:2]) / sum(split_ratio)
+    train_ratio = split_ratio[0] / (m := sum(split_ratio))
+    test_ratio = sum(split_ratio[:2]) / m
     train_idx, test_idx = int(data_len * train_ratio), int(data_len * test_ratio)
     if method == "random":
         random.shuffle(raw_data)
@@ -285,9 +285,9 @@ def split_dataset(
         scaffolds: Dict[str, List] = {}
         for key, d in enumerate(raw_data):
             # compute Bemis-Murcko scaffold
-            if len(smiles_idx) > 1:
+            if n_smi > 1:
                 warnings.warn(
-                    f"We found {len(smiles_idx)} SMILES strings in a row!"
+                    f"We found {n_smi} SMILES strings in a row!"
                     " Only the first SMILES will be used to compute the molecular scaffold.",
                     stacklevel=2,
                 )
