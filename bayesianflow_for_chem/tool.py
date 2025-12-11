@@ -269,9 +269,9 @@ def split_dataset(
     raw_data = data[1:]
     smiles_idx = []  # only first index will be used
     for key, h in enumerate(header):
-        if "smiles" in h.lower():
+        if "smiles" in h.lower() or "safe" in h.lower():
             smiles_idx.append(key)
-    assert (n_smi := len(smiles_idx)) > 0
+    assert (n_smi := len(smiles_idx)) > 0, "No SMILES were found!"
     data_len = len(raw_data)
     train_ratio = split_ratio[0] / (m := sum(split_ratio))
     test_ratio = sum(split_ratio[:2]) / m
