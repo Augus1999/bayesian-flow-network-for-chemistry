@@ -6,3 +6,6 @@
 
 ### Feature request?
 Please make sure you understand our papers before suggesting a feature.
+
+### AI code policy
+No AI generated code is allowed.
