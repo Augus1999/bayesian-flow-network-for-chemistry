@@ -242,15 +242,14 @@ def load_model_config(
     flag_critical, flag_warning = 0, 0
     with open(config_file, "rb") as f:
         model_config = tomllib.load(f)
-    if model_config["ChemBFN"]["num_vocab"] != "match vocabulary size":
-        if not isinstance(model_config["ChemBFN"]["num_vocab"], int):
+    if (num_vocab := model_config["ChemBFN"]["num_vocab"]) != "match vocabulary size":
+        if not isinstance(num_vocab, int):
             rank_zero_info(
                 f"\033[0;31mCritical\033[0;0m in {config_file}: You must specify num_vocab."
             )
             flag_critical += 1
-    if model_config["ChemBFN"]["base_model"]:
-        model_file = model_config["ChemBFN"]["base_model"]
-        for fn in model_file:
+    if model_files := model_config["ChemBFN"]["base_model"]:
+        for fn in model_files:
             if not os.path.exists(fn):
                 rank_zero_info(
                     f"\033[0;31mCritical\033[0;0m in {config_file}: Base model file {fn} does not exist."
@@ -264,11 +263,10 @@ def load_model_config(
                 f"\033[0;31mCritical\033[0;0m in {config_file}: MLP hidden size {b} should match ChemBFN hidden size {a}."
             )
             flag_critical += 1
-        if model_config["MLP"]["base_model"]:
-            model_file = model_config["MLP"]["base_model"]
-            if not os.path.exists(model_file):
+        if mlp_file := model_config["MLP"]["base_model"]:
+            if not os.path.exists(mlp_file):
                 rank_zero_info(
-                    f"\033[0;31mCritical\033[0;0m in {config_file}: Base model file {fn} does not exist."
+                    f"\033[0;31mCritical\033[0;0m in {config_file}: Base model file {mlp_file} does not exist."
                 )
                 flag_critical += 1
     return model_config, flag_critical, flag_warning
@@ -321,8 +319,7 @@ def load_runtime_config(
                 f"\033[0;31mCritical\033[0;0m in {config_file}: Unknown logger: {logger_name}."
             )
             flag_critical += 1
-        if config["train"]["restart"]:
-            ckpt_file = config["train"]["restart"]
+        if ckpt_file := config["train"]["restart"]:
             if not os.path.exists(ckpt_file):
                 rank_zero_info(
                     f"\033[0;31mCritical\033[0;0m in {config_file}: Restart checkpoint file {ckpt_file} does not exist."
@@ -637,27 +634,23 @@ def main_script(version: str) -> None:
         sample_step = runtime_config["inference"]["sample_step"]
         sample_method = runtime_config["inference"]["sample_method"]
         guidance_strength = runtime_config["inference"]["guidance_objective_strength"]
-        if runtime_config["inference"]["unwanted_token"]:
-            unwanted_token = runtime_config["inference"]["unwanted_token"]
+        if unwanted_token := runtime_config["inference"]["unwanted_token"]:
             allowed_token = [i for i in vocab_keys if i not in unwanted_token]
         else:
             allowed_token = "all"
-        if runtime_config["inference"]["guidance_objective"] and mlp is not None:
-            y = runtime_config["inference"]["guidance_objective"]
+        if (y := runtime_config["inference"]["guidance_objective"]) and mlp is not None:
             y = torch.tensor(y, dtype=torch.float32)[None, :]
             y = mlp(y)
         else:
             y = None
-        if runtime_config["inference"]["guidance_scaffold"]:
-            scaffold = runtime_config["inference"]["guidance_scaffold"]
+        if scaffold := runtime_config["inference"]["guidance_scaffold"]:
             x = tokeniser(scaffold)
             x = torch.nn.functional.pad(
                 x[:-1], (0, sequence_length - x.shape[-1] + 1), value=0
             )
             x = x[None, :].repeat(batch_size, 1)
             # then sample template will be ignored.
-        elif runtime_config["inference"]["sample_template"]:
-            template = runtime_config["inference"]["sample_template"]
+        elif template := runtime_config["inference"]["sample_template"]:
             x = tokeniser(template)
             x = torch.nn.functional.pad(x, (0, sequence_length - x.shape[-1]), value=0)
             x = x[None, :].repeat(batch_size, 1)
