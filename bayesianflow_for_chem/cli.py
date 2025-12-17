@@ -417,6 +417,11 @@ def main_script(version: str) -> None:
         if not os.path.exists(runtime_config["train"]["checkpoint_save_path"]):
             if not parser.dryrun:  # only create it in real tasks
                 os.makedirs(runtime_config["train"]["checkpoint_save_path"])
+        if runtime_config["train"]["objective_tag"] and not "MLP" in model_config:
+            rank_zero_info(
+                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You have specified objective tag in {parser.config} but did not define a MLP to handle it."
+            )
+            flag_warning += 1
     else:
         if not model_config["ChemBFN"]["base_model"]:
             rank_zero_info(

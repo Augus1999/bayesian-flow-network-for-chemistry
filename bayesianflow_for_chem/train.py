@@ -66,7 +66,7 @@ class Model(LightningModule):
             mask = batch["mask"]
         else:
             mask = None
-        if self.mlp is not None:
+        if self.mlp is not None and "value" in batch:
             y = batch["value"]
             y = self.mlp.forward(y)
             if y.dim() == 2:
