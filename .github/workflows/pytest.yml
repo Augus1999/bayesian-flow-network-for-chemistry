@@ -9,6 +9,10 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+  issues: none
+
 jobs:
   build:
 
