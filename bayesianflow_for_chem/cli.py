@@ -4,6 +4,7 @@
 CLI utilities.
 """
 import os
+import ast
 import json
 import tomllib
 import argparse
@@ -30,6 +31,32 @@ from bayesianflow_for_chem.data import (
 )
 from bayesianflow_for_chem.tool import sample, inpaint, optimise, adjust_lora_
 
+
+_FORBIDDEN_IMPORTS = (
+    "os",
+    "sys",
+    "pickle",
+    "socket",
+    "requests",
+    "importlib",
+    "subprocess",
+    "cloudpickle",
+)
+_FORBIDDEN_CALLS = (
+    "mro",
+    "eval",
+    "exec",
+    "open",
+    "compile",
+    "__import__",
+)
+_FORBIDDEN_ATTRS = (
+    "__mro__",
+    "__dict__",
+    "__class__",
+    "__globals__",
+    "__subclasses__",
+)
 
 """
 example model_config.toml file:
@@ -121,6 +148,7 @@ _END_MESSAGE = r"""
 If you find this project helpful, please cite us:
 1. N. Tao, and M. Abe, J. Chem. Inf. Model., 2025, 65, 1178-1187.
 2. N. Tao, 2024, arXiv:2412.11439.
+3. N. Tao, T. Nagai, and M. Abe, 
 """
 
 _ERROR_MESSAGE = r"""
@@ -134,13 +162,52 @@ lead to logical inconsistencies.
                         -- Karl Popper --
 """
 
-_ALLOWED_PLUGINS = [
+_ALLOWED_PLUGINS = (
+    "shuffle",
+    "CustomData",
     "collate_fn",
     "num_workers",
     "max_sequence_length",
-    "shuffle",
-    "CustomData",
-]
+)
+
+
+class _PluginStaticValidator(ast.NodeVisitor):
+    def __init__(self) -> None:
+        self.defined_symbols = set()
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            root = alias.name.split(".")[0]
+            if root in _FORBIDDEN_IMPORTS:
+                raise ValueError(f"Forbidden import: {root}")
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module:
+            root = node.module.split(".")[0]
+            if root in _FORBIDDEN_IMPORTS:
+                raise ValueError(f"Forbidden import: {root}")
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if isinstance(node.func, ast.Name):
+            if node.func.id in _FORBIDDEN_CALLS:
+                raise ValueError(f"Forbidden call: {node.func.id}")
+        if isinstance(node.func, ast.Attribute):
+            if node.func.attr in _FORBIDDEN_ATTRS:
+                raise ValueError(f"Forbidden attribute access: {node.func.attr}")
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if node.attr in _FORBIDDEN_ATTRS:
+            raise ValueError(f"Forbidden attribute: {node.attr}")
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self.defined_symbols.add(node.name)
+        self.generic_visit(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.defined_symbols.add(node.name)
+        self.generic_visit(node)
 
 
 def _load_plugin(plugin_file: str) -> Dict[str, Union[int, Callable, object, None]]:
@@ -148,6 +215,8 @@ def _load_plugin(plugin_file: str) -> Dict[str, Union[int, Callable, object, Non
         return {n: None for n in _ALLOWED_PLUGINS}
     from importlib import util as iutil
 
+    _plugin_tree = ast.parse(Path(plugin_file).read_text())
+    _PluginStaticValidator().visit(_plugin_tree)
     spec = iutil.spec_from_file_location(Path(plugin_file).stem, plugin_file)
     plugins = iutil.module_from_spec(spec)
     spec.loader.exec_module(plugins)
@@ -420,6 +489,11 @@ def main_script(version: str) -> None:
         if runtime_config["train"]["objective_tag"] and not "MLP" in model_config:
             rank_zero_info(
                 f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You have specified objective tag in {parser.config} but did not define a MLP to handle it."
+            )
+            flag_warning += 1
+        if "MLP" in model_config and not runtime_config["train"]["objective_tag"]:
+            rank_zero_info(
+                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: MLP not used."
             )
             flag_warning += 1
     else:

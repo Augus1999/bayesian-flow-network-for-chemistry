@@ -16,7 +16,7 @@ __all__ = [
     "MLP",
     "EnsembleChemBFN",
 ]
-__version__ = "2.3.4"
+__version__ = "2.3.5"
 __author__ = "Nianze A. Tao (Omozawa Sueno)"
 
 
@@ -27,9 +27,14 @@ def main() -> None:
     :return:
     :rtype: None
     """
-    import colorama
+    import platform
     from bayesianflow_for_chem.cli import main_script
 
-    colorama.just_fix_windows_console()
+    _is_windows = platform.system() == "Windows"
+    if _is_windows:
+        import colorama
+
+        colorama.just_fix_windows_console()
     main_script(__version__)
-    colorama.deinit()
+    if _is_windows:
+        colorama.deinit()
