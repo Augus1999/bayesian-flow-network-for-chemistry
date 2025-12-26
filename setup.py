@@ -49,7 +49,7 @@ setup(
     include_package_data=True,
     author="Nianze A. Tao",
     author_email="tao-nianze@hiroshima-u.ac.jp",
-    packages=find_packages(),
+    # packages=find_packages(),
     python_requires=">=3.11",
     install_requires=[
         "rdkit>=2025.3.5",
