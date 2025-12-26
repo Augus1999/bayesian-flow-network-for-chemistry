@@ -4,7 +4,7 @@ import os
 import re
 from pathlib import Path
 from shutil import rmtree
-from setuptools import setup, find_packages
+from setuptools import setup  # , find_packages
 
 source_path = Path("bayesianflow_for_chem")
 
