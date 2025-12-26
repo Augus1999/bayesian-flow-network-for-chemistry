@@ -11,7 +11,7 @@ import argparse
 import datetime
 from pathlib import Path
 from functools import partial
-from typing import List, Tuple, Dict, Union, Callable
+from typing import List, Tuple, Dict, Union, Callable, Any
 import torch
 from rdkit.Chem import MolFromSmiles, CanonSmiles
 from lightning.pytorch.utilities import rank_zero_info, rank_zero_only
@@ -32,17 +32,18 @@ from bayesianflow_for_chem.data import (
 from bayesianflow_for_chem.tool import sample, inpaint, optimise, adjust_lora_
 
 
-_FORBIDDEN_IMPORTS = (
+_FORBIDDEN_PLUGIN_IMPORTS = (
     "os",
     "sys",
     "pickle",
     "socket",
+    "shutil",
     "requests",
     "importlib",
     "subprocess",
     "cloudpickle",
 )
-_FORBIDDEN_CALLS = (
+_FORBIDDEN_PLUGIN_CALLS = (
     "mro",
     "eval",
     "exec",
@@ -50,7 +51,7 @@ _FORBIDDEN_CALLS = (
     "compile",
     "__import__",
 )
-_FORBIDDEN_ATTRS = (
+_FORBIDDEN_PLUGIN_ATTRS = (
     "__mro__",
     "__dict__",
     "__class__",
@@ -148,7 +149,7 @@ _END_MESSAGE = r"""
 If you find this project helpful, please cite us:
 1. N. Tao, and M. Abe, J. Chem. Inf. Model., 2025, 65, 1178-1187.
 2. N. Tao, 2024, arXiv:2412.11439.
-3. N. Tao, T. Nagai, and M. Abe, 
+3. N. Tao, T. Nagai, and M. Abe, CICSJ Bulletin, 2025, 43, 10-14.
 """
 
 _ERROR_MESSAGE = r"""
@@ -178,26 +179,26 @@ class _PluginStaticValidator(ast.NodeVisitor):
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             root = alias.name.split(".")[0]
-            if root in _FORBIDDEN_IMPORTS:
+            if root in _FORBIDDEN_PLUGIN_IMPORTS:
                 raise ValueError(f"Forbidden import: {root}")
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         if node.module:
             root = node.module.split(".")[0]
-            if root in _FORBIDDEN_IMPORTS:
+            if root in _FORBIDDEN_PLUGIN_IMPORTS:
                 raise ValueError(f"Forbidden import: {root}")
 
     def visit_Call(self, node: ast.Call) -> None:
         if isinstance(node.func, ast.Name):
-            if node.func.id in _FORBIDDEN_CALLS:
+            if node.func.id in _FORBIDDEN_PLUGIN_CALLS:
                 raise ValueError(f"Forbidden call: {node.func.id}")
         if isinstance(node.func, ast.Attribute):
-            if node.func.attr in _FORBIDDEN_ATTRS:
+            if node.func.attr in _FORBIDDEN_PLUGIN_ATTRS:
                 raise ValueError(f"Forbidden attribute access: {node.func.attr}")
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
-        if node.attr in _FORBIDDEN_ATTRS:
+        if node.attr in _FORBIDDEN_PLUGIN_ATTRS:
             raise ValueError(f"Forbidden attribute: {node.attr}")
         self.generic_visit(node)
 
@@ -210,12 +211,14 @@ class _PluginStaticValidator(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def _load_plugin(plugin_file: str) -> Dict[str, Union[int, Callable, object, None]]:
+def _load_plugin(
+    plugin_file: str,
+) -> Dict[str, Union[int, bool, Callable, object, None]]:
     if not plugin_file:
         return {n: None for n in _ALLOWED_PLUGINS}
     from importlib import util as iutil
 
-    _plugin_tree = ast.parse(Path(plugin_file).read_text())
+    _plugin_tree = ast.parse(Path(plugin_file).read_text(), mode="exec")
     _PluginStaticValidator().visit(_plugin_tree)
     spec = iutil.spec_from_file_location(Path(plugin_file).stem, plugin_file)
     plugins = iutil.module_from_spec(spec)
@@ -231,7 +234,9 @@ def _load_plugin(plugin_file: str) -> Dict[str, Union[int, Callable, object, Non
 
 
 def _save_job_info(
-    runtime_config: Dict[str, Dict], model_config: Dict[str, Dict], save_path: Path
+    runtime_config: Dict[str, Union[str, Dict[str, Any]]],
+    model_config: Dict[str, Dict[str, Union[str, int, float, bool, List[int]]]],
+    save_path: Path,
 ) -> str:
     # Save config and return an unique time stamp.
     time_stamp = datetime.datetime.now().strftime(r"%Y%m%d%H%M%S")
@@ -297,7 +302,7 @@ def parse_cli(version: str) -> argparse.Namespace:
 
 def load_model_config(
     config_file: Union[str, Path],
-) -> Tuple[Dict[str, Dict], int, int]:
+) -> Tuple[Dict[str, Dict[str, Union[str, int, float, bool, List[int]]]], int, int]:
     """
     Load the model configurations from a .toml file and check the settings.
 
@@ -343,7 +348,7 @@ def load_model_config(
 
 def load_runtime_config(
     config_file: Union[str, Path],
-) -> Tuple[Dict[str, Dict], int, int]:
+) -> Tuple[Dict[str, Union[str, Dict[str, Any]]], int, int]:
     """
     Load the runtime configurations from a .toml file and check the settings.
 
@@ -441,7 +446,7 @@ def load_runtime_config(
 def _encode(
     x: Dict[str, List[str]],
     mol_tag: List[str],
-    obj_tag: Union[List, List[str]],
+    obj_tag: List[str],
     tokeniser: Callable[[str], torch.Tensor],
 ) -> Dict[str, torch.Tensor]:
     mol = ".".join(x[mol_tag])

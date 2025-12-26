@@ -1,14 +1,15 @@
 # ChemBFN: Bayesian Flow Network for Chemistry
 
 [![DOI](https://zenodo.org/badge/DOI/10.1021/acs.jcim.4c01792.svg)](https://doi.org/10.1021/acs.jcim.4c01792)
+[![DOI](https://zenodo.org/badge/DOI/10.11546/cicsj.43.10.svg)](https://doi.org/10.11546/cicsj.43.10)
 [![arxiv](https://img.shields.io/badge/arXiv-2412.11439-red)](https://arxiv.org/abs/2412.11439)
 
 This is the repository of the PyTorch implementation of ChemBFN model.
 
 ### Build State
 
-[![PyPI](https://img.shields.io/pypi/v/bayesianflow-for-chem?color=ff69b4)](https://pypi.org/project/bayesianflow-for-chem/)
-![pytest](https://github.com/Augus1999/bayesian-flow-network-for-chemistry/actions/workflows/pytest.yml/badge.svg)
+[![PyPI](https://img.shields.io/pypi/v/bayesianflow-for-chem?color=5d9bff)](https://pypi.org/project/bayesianflow-for-chem/)
+![CI](https://github.com/Augus1999/bayesian-flow-network-for-chemistry/actions/workflows/pytest.yml/badge.svg)
 [![document](https://github.com/Augus1999/bayesian-flow-network-for-chemistry/actions/workflows/pages/pages-build-deployment/badge.svg)](https://augus1999.github.io/bayesian-flow-network-for-chemistry/)
 
 ## Features
@@ -28,6 +29,7 @@ in an all-in-one-model style.
 
 ## News
 
+* [26/12/2025] We were invited to submit a short report about ChemBFN for [CICSJ Bulletin](https://www.jstage.jst.go.jp/article/cicsj/43/1/43_10/_article/-char/ja).
 * [09/10/2025] A web app [`chembfn_webui`](https://github.com/Augus1999/ChemBFN-WebUI) for hosting ChemBFN models is available on [PyPI](https://pypi.org/project/chembfn-webui/).
 * [30/01/2025] The package `bayesianflow_for_chem` is available on [PyPI](https://pypi.org/project/bayesianflow-for-chem/).
 * [21/01/2025] Our first paper has been accepted by [JCIM](https://pubs.acs.org/doi/10.1021/acs.jcim.4c01792).
@@ -112,7 +114,20 @@ We provide a Python class [`CSVData`](./bayesianflow_for_chem/data.py) to handle
     doi={10.1021/acs.jcim.4c01792},
 }
 ```
-Out-of-distribution generation:
+```bibtex
+@article{2025chembfn_report,
+    title={Molecular Structure Design via Bayesian Flow Network},
+    author={Tao, Nianze and Nagai, Touma and Abe, Minori},
+    journal={CICSJ Bulletin},
+    volume={43},
+    number={1},
+    pages={10-14},
+    year={2025},
+    doi={10.11546/cicsj.43.10},
+}
+```
+
+Out-of-distribution generation and fast sampling:
 ```bibtex
 @misc{2024chembfn_ood,
     title={Bayesian Flow Is All You Need to Sample Out-of-Distribution Chemical Spaces}, 

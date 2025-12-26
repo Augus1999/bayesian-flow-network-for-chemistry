@@ -63,8 +63,7 @@ def _map_model_to_device(
 ):
     if isinstance(model, torch.fx.GraphModule):
         return model.to(device)
-    else:
-        return model.to(device).eval()
+    return model.to(device).eval()
 
 
 def _map_value_to_device(
@@ -263,7 +262,7 @@ def split_dataset(
     assert file.endswith(".csv")
     assert len(split_ratio) == 3
     assert method in ("random", "scaffold")
-    with open(file, "r") as f:
+    with open(file, "r", encoding="utf-8") as f:
         data = list(csv.reader(f))
     header = data[0]
     raw_data = data[1:]
@@ -282,7 +281,7 @@ def split_dataset(
         test_set = raw_data[train_idx:test_idx]
         val_set = raw_data[test_idx:]
     if method == "scaffold":
-        scaffolds: Dict[str, List] = {}
+        scaffolds: Dict[str, List[int]] = {}
         for key, d in enumerate(raw_data):
             # compute Bemis-Murcko scaffold
             if n_smi > 1:
@@ -309,14 +308,20 @@ def split_dataset(
                     test_set += [raw_data[i] for i in idxs]
             else:
                 train_set += [raw_data[i] for i in idxs]
-    with open(file.replace(".csv", "_train.csv"), "w", newline="") as ftr:
+    with open(
+        file.replace(".csv", "_train.csv"), "w", newline="", encoding="utf-8"
+    ) as ftr:
         writer = csv.writer(ftr)
         writer.writerows([header] + train_set)
-    with open(file.replace(".csv", "_test.csv"), "w", newline="") as fte:
+    with open(
+        file.replace(".csv", "_test.csv"), "w", newline="", encoding="utf-8"
+    ) as fte:
         writer = csv.writer(fte)
         writer.writerows([header] + test_set)
     if val_set:
-        with open(file.replace(".csv", "_val.csv"), "w", newline="") as fva:
+        with open(
+            file.replace(".csv", "_val.csv"), "w", newline="", encoding="utf-8"
+        ) as fva:
             writer = csv.writer(fva)
             writer.writerows([header] + val_set)
 
