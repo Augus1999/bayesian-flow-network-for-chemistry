@@ -11,7 +11,7 @@ import argparse
 import datetime
 from pathlib import Path
 from functools import partial
-from typing import List, Tuple, Dict, Union, Callable, Any
+from typing import List, Tuple, Dict, Union, Callable, Any, Literal
 import torch
 from rdkit.Chem import MolFromSmiles, CanonSmiles
 from lightning.pytorch.utilities import rank_zero_info, rank_zero_only
@@ -135,7 +135,7 @@ exclude_duplicate = true  # to only store unique samples
 result_file = "home/user/project/result/result.csv"
 """
 
-_MESSAGE = r"""
+_HEAD_MESSAGE = r"""
 madmadmadmadmadmadmadmadmadmadmadmadmadmadmad
   __  __    __    ____  __  __  _____  __     
  (  \/  )  /__\  (  _ \(  \/  )(  _  )(  )    
@@ -162,6 +162,8 @@ contend that a principle of induction is superfluous, and that it must
 lead to logical inconsistencies.  
                         -- Karl Popper --
 """
+
+_CHECK_MESSAGE = {1: "\033[0;31mCritical\033[0;0m", 2: "\033[0;33mWarning\033[0;0m"}
 
 _ALLOWED_PLUGINS = (
     "shuffle",
@@ -231,6 +233,20 @@ def _load_plugin(
         else:
             plugin_dict[n] = None
     return plugin_dict
+
+
+def _check_path(
+    path_str: str, config_fn: str, msg: str, level: Literal[1, 2] = 1
+) -> int:
+    # Check the existence of a given path and return state.
+    # level 1: critical
+    # level 2: warning
+    if not os.path.exists(path_str):
+        rank_zero_info(
+            f"{_CHECK_MESSAGE.get(level, 'Unknown error')} in {config_fn}: {msg % path_str}"
+        )
+        return 1
+    return 0
 
 
 def _save_job_info(
@@ -324,11 +340,9 @@ def load_model_config(
             flag_critical += 1
     if model_files := model_config["ChemBFN"]["base_model"]:
         for fn in model_files:
-            if not os.path.exists(fn):
-                rank_zero_info(
-                    f"\033[0;31mCritical\033[0;0m in {config_file}: Base model file {fn} does not exist."
-                )
-                flag_critical += 1
+            flag_critical += _check_path(
+                fn, config_file, "Base model file %s does not exist."
+            )
     if "MLP" in model_config:
         a = model_config["ChemBFN"]["channel"]
         b = model_config["MLP"]["size"][-1]
@@ -338,11 +352,9 @@ def load_model_config(
             )
             flag_critical += 1
         if mlp_file := model_config["MLP"]["base_model"]:
-            if not os.path.exists(mlp_file):
-                rank_zero_info(
-                    f"\033[0;31mCritical\033[0;0m in {config_file}: Base model file {mlp_file} does not exist."
-                )
-                flag_critical += 1
+            flag_critical += _check_path(
+                mlp_file, config_file, "Base model file %s does not exist."
+            )
     return model_config, flag_critical, flag_warning
 
 
@@ -375,18 +387,15 @@ def load_runtime_config(
                 f"\033[0;31mCritical\033[0;0m in {config_file}: You should specify a vocabulary file."
             )
             flag_critical += 1
-        elif not os.path.exists(vocab):
-            rank_zero_info(
-                f"\033[0;31mCritical\033[0;0m in {config_file}: Vocabulary file {vocab} does not exist."
+        else:
+            flag_critical += _check_path(
+                vocab, config_file, "Vocabulary file %s does not exist."
             )
-            flag_critical += 1
     if "train" in config:
         dataset_file = config["train"]["dataset"]
-        if not os.path.exists(dataset_file):
-            rank_zero_info(
-                f"\033[0;31mCritical\033[0;0m in {config_file}: Dataset file {dataset_file} does not exist."
-            )
-            flag_critical += 1
+        flag_critical += _check_path(
+            dataset_file, config_file, "Dataset file %s does not exist."
+        )
         logger_name = config["train"]["logger_name"].lower()
         if not logger_name in "csv tensorboard wandb".split():
             rank_zero_info(
@@ -394,19 +403,15 @@ def load_runtime_config(
             )
             flag_critical += 1
         if ckpt_file := config["train"]["restart"]:
-            if not os.path.exists(ckpt_file):
-                rank_zero_info(
-                    f"\033[0;31mCritical\033[0;0m in {config_file}: Restart checkpoint file {ckpt_file} does not exist."
-                )
-                flag_critical += 1
+            flag_critical += _check_path(
+                ckpt_file, config_file, "Restart checkpoint file %s does not exist."
+            )
         # ↓ added in v2.2.0; need to be compatible with old versions.
         plugin_script: str = config["train"].get("plugin_script", "")
         if plugin_script:
-            if not os.path.exists(plugin_script):
-                rank_zero_info(
-                    f"\033[0;31mCritical\033[0;0m in {config_file}: Plugin script {plugin_script} does not exist."
-                )
-                flag_critical += 1
+            flag_critical += _check_path(
+                plugin_script, config_file, "Plugin script %s does not exist."
+            )
     if "inference" in config:
         sequence_length = config["inference"]["sequence_length"]
         if not "train" in config:
@@ -427,11 +432,12 @@ def load_runtime_config(
                 )
                 flag_critical += 1
         result_dir = Path(config["inference"]["result_file"]).parent
-        if not os.path.exists(result_dir):
-            rank_zero_info(
-                f"\033[0;33mWarning\033[0;0m in {config_file}: Directory {result_dir} to save the result does not exist."
-            )
-            flag_warning += 1
+        flag_warning += _check_path(
+            result_dir,
+            config_file,
+            "Directory %s to save the result does not exist.",
+            level=2,
+        )
         if (
             config["inference"]["guidance_scaffold"] != ""
             and config["inference"]["sample_template"] != ""
@@ -531,7 +537,7 @@ def main_script(version: str) -> None:
         return
     if flag_critical != 0:
         raise RuntimeError(_ERROR_MESSAGE)
-    rank_zero_info(_MESSAGE.format(version))
+    rank_zero_info(_HEAD_MESSAGE.format(version))
     time_stamp = _save_job_info(
         runtime_config, model_config, Path(parser.config).parent
     )
