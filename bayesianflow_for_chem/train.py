@@ -25,6 +25,21 @@ DEFAULT_REGRESSOR_HPARAM = {
 }
 
 
+def _mark_only_lora_as_trainable(model: ChemBFN) -> None:
+    # Modified from https://github.com/microsoft/LoRA/blob/main/loralib/utils.py
+    # We only mark 'real' LoRA parameters as trainable.
+    for name, param in model.named_parameters():
+        if "lora_" not in name:
+            param.requires_grad = False
+
+
+def _lora_state_dict(model: ChemBFN) -> Dict[str, Tensor]:
+    # Modified from https://github.com/microsoft/LoRA/blob/main/loralib/utils.py
+    # We only loard 'real' LoRA parameters.
+    state_dict = model.state_dict()
+    return {k: state_dict[k] for k in state_dict if "lora_" in k}
+
+
 class Model(LightningModule):
     def __init__(
         self,
@@ -54,9 +69,7 @@ class Model(LightningModule):
         self.scorer = scorer
         self.save_hyperparameters(hparam, ignore=["model", "mlp", "scorer"])
         if model.lora_enabled:
-            from loralib import mark_only_lora_as_trainable
-
-            mark_only_lora_as_trainable(self.model)
+            _mark_only_lora_as_trainable(self.model)
         self.use_scorer = self.scorer is not None
 
     def training_step(self, batch: Dict[str, Tensor]) -> Tensor:
@@ -108,11 +121,9 @@ class Model(LightningModule):
         :rtype: None
         """
         if self.model.lora_enabled:
-            from loralib import lora_state_dict
-
             torch.save(
                 {
-                    "lora_nn": lora_state_dict(self.model),
+                    "lora_nn": _lora_state_dict(self.model),
                     "lora_param": self.model.lora_param,
                 },
                 workdir / "lora.pt",
@@ -155,9 +166,7 @@ class Regressor(LightningModule):
         self.model.requires_grad_(not hparam["freeze"])
         self.save_hyperparameters(hparam, ignore=["model", "mlp"])
         if model.lora_enabled:
-            from loralib import mark_only_lora_as_trainable
-
-            mark_only_lora_as_trainable(self.model)
+            _mark_only_lora_as_trainable(self.model)
         assert hparam["mode"] in ("regression", "classification")
 
     @staticmethod
@@ -236,11 +245,9 @@ class Regressor(LightningModule):
         )
         if not self.hparams.freeze:
             if self.model.lora_enabled:
-                from loralib import lora_state_dict
-
                 torch.save(
                     {
-                        "lora_nn": lora_state_dict(self.model),
+                        "lora_nn": _lora_state_dict(self.model),
                         "lora_param": self.model.lora_param,
                     },
                     workdir / "lora.pt",

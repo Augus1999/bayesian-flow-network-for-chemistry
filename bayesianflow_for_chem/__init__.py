@@ -16,7 +16,7 @@ __all__ = [
     "MLP",
     "EnsembleChemBFN",
 ]
-__version__ = "2.3.5"
+__version__ = "2.4.0"
 __author__ = "Nianze A. Tao (Omozawa Sueno)"
 
 
