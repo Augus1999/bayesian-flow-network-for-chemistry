@@ -13,6 +13,10 @@ from torch.nn.functional import softmax, linear, dropout
 
 
 class MLP(nn.Module):
+    """
+    MLP class.
+    """
+
     def __init__(
         self, size: List[int], class_input: bool = False, dropout: float = 0.0
     ) -> None:
@@ -73,9 +77,9 @@ class MLP(nn.Module):
         """
         with open(ckpt, "rb") as f:
             state = torch.load(f, "cpu", weights_only=True)
-        nn, hparam = state["nn"], state["hparam"]
+        model_nn, hparam = state["nn"], state["hparam"]
         model = cls(**hparam)
-        model.load_state_dict(nn, strict)
+        model.load_state_dict(model_nn, strict)
         return model
 
 
@@ -400,6 +404,10 @@ class FinalLayer(nn.Module):
 
 
 class ChemBFN(nn.Module):
+    """
+    ChemBFN model class.
+    """
+
     def __init__(
         self,
         num_vocab: int,
@@ -1008,9 +1016,9 @@ class ChemBFN(nn.Module):
         """
         with open(ckpt, "rb") as f:
             state = torch.load(f, "cpu", weights_only=True)
-        nn, hparam = state["nn"], state["hparam"]
+        model_nn, hparam = state["nn"], state["hparam"]
         model = cls(**hparam)
-        model.load_state_dict(nn, False)
+        model.load_state_dict(model_nn, False)
         if ckpt_lora:
             with open(ckpt_lora, "rb") as g:
                 lora_state = torch.load(g, "cpu", weights_only=True)
@@ -1024,6 +1032,10 @@ class ChemBFN(nn.Module):
 
 
 class EnsembleChemBFN(ChemBFN):
+    """
+    Ensembled ChemBFN class.
+    """
+
     def __init__(
         self,
         base_model_path: Union[str, Path],

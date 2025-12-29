@@ -39,7 +39,7 @@ def spectra_wasserstein_score(
     continuous spectra scaled by the area under the first spectrum curve `spectrum_u`.
 
     :param spectrum_u: the reference spectrum
-    :param spectrum_v: the
+    :param spectrum_v: the predicted spectrum
     :param x_axis: the shared x-axis of the spectra
     :type spectrum_u: numpy.ndarray
     :type spectrum_v: numpy.ndarray

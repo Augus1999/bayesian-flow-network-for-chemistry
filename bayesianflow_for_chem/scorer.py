@@ -50,6 +50,10 @@ def sa_score(smiles: str) -> float:
 
 
 class Scorer:
+    """
+    Scorer class for training only.
+    """
+
     def __init__(
         self,
         scorers: List[Callable[[str], Union[int, float]]],

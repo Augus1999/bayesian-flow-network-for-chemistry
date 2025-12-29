@@ -41,6 +41,10 @@ def _lora_state_dict(model: ChemBFN) -> Dict[str, Tensor]:
 
 
 class Model(LightningModule):
+    """
+    Generative model class for training only.
+    """
+
     def __init__(
         self,
         model: ChemBFN,
@@ -141,6 +145,10 @@ class Model(LightningModule):
 
 
 class Regressor(LightningModule):
+    """
+    Regressor class for training only.
+    """
+
     def __init__(
         self,
         model: ChemBFN,

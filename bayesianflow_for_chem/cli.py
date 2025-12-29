@@ -38,6 +38,7 @@ _FORBIDDEN_PLUGIN_IMPORTS = (
     "pickle",
     "socket",
     "shutil",
+    "pathlib",
     "requests",
     "importlib",
     "subprocess",
@@ -220,7 +221,7 @@ def _load_plugin(
         return {n: None for n in _ALLOWED_PLUGINS}
     from importlib import util as iutil
 
-    _plugin_tree = ast.parse(Path(plugin_file).read_text(), mode="exec")
+    _plugin_tree = ast.parse(Path(plugin_file).read_text("utf-8"), mode="exec")
     _PluginStaticValidator().visit(_plugin_tree)
     spec = iutil.spec_from_file_location(Path(plugin_file).stem, plugin_file)
     plugins = iutil.module_from_spec(spec)
@@ -603,9 +604,10 @@ def main_script(version: str) -> None:
         plugin_file = runtime_config["train"].get("plugin_script", "")
         plugins = _load_plugin(plugin_file)
         # ####### build scorer #######
-        if (tokeniser_name == "smiles" or tokeniser_name == "safe") and runtime_config[
-            "train"
-        ]["enforce_validity"]:
+        if (
+            tokeniser_name in ("smiles", "safe")
+            and runtime_config["train"]["enforce_validity"]
+        ):
             scorer = Scorer(
                 [smiles_valid], [lambda x: float(x == 1)], vocab_keys, name="invalid"
             )
@@ -625,7 +627,7 @@ def main_script(version: str) -> None:
         if plugins["max_sequence_length"]:
             lmax = plugins["max_sequence_length"]
         else:
-            lmax = max([i["token"].shape[-1] for i in dataset])
+            lmax = max(i["token"].shape[-1] for i in dataset)
         dataloader = DataLoader(
             dataset,
             runtime_config["train"]["batch_size"],
@@ -704,7 +706,9 @@ def main_script(version: str) -> None:
             "name": runtime_config["run_name"],
         }
         with open(
-            Path(runtime_config["train"]["checkpoint_save_path"]) / "config.json", "w"
+            Path(runtime_config["train"]["checkpoint_save_path"]) / "config.json",
+            "w",
+            encoding="utf-8",
         ) as g:
             json.dump(c, g, indent=4)
     # ------- inference -------
@@ -795,7 +799,9 @@ def main_script(version: str) -> None:
             if runtime_config["inference"]["exclude_duplicate"]:
                 mols = list(set(mols))
         # ####### save results #######
-        with open(runtime_config["inference"]["result_file"], "w") as f:
+        with open(
+            runtime_config["inference"]["result_file"], "w", encoding="utf-8"
+        ) as f:
             f.write("\n".join(mols))
     # ------- finished -------
     rank_zero_info("*" * 25 + " job finished " + "*" * 25)

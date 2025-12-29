@@ -31,9 +31,9 @@ from .model import ChemBFN, MLP, EnsembleChemBFN
 def _find_device() -> torch.device:
     if torch.cuda.is_available():
         return torch.device("cuda")
-    elif torch.mps.is_available():
+    if torch.mps.is_available():
         return torch.device("mps")
-    elif torch.xpu.is_available():
+    if torch.xpu.is_available():
         return torch.device("xpu")
     # TODO: waiting for a native way to use xla devices
     return torch.device("cpu")
@@ -47,7 +47,7 @@ def _parse_and_assert_param(
     assert method.split(":")[0].lower() in ("ode", "bfn")
     if isinstance(model, EnsembleChemBFN):
         assert y is not None, "conditioning is required while using an ensemble model."
-        assert isinstance(y, list) or isinstance(y, dict)
+        assert isinstance(y, (list, dict))
     else:
         assert isinstance(y, Tensor) or (y is None)
     if "ode" in method.lower():
@@ -658,7 +658,9 @@ class GeometryConverter:
                     cwd=temp_dir,
                 )
                 if s.returncode == 0:
-                    with open(Path(temp_dir) / "crest_property.xyz", "r") as f:
+                    with open(
+                        Path(temp_dir) / "crest_property.xyz", "r", encoding="utf-8"
+                    ) as f:
                         xyz = f.readlines()
                     xyz_data = []
                     for i in xyz[2:]:

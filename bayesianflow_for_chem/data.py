@@ -135,7 +135,7 @@ def collate(batch: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
     if "MAX_PADDING_LENGTH" in os.environ:
         lmax = int(os.environ["MAX_PADDING_LENGTH"])
     else:
-        lmax = max([len(w) for w in token])
+        lmax = max(len(w) for w in token)
     token = torch.cat(
         [F.pad(i, (0, lmax - len(i)), value=0)[None, :] for i in token], 0
     )
@@ -151,6 +151,10 @@ def collate(batch: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
 
 
 class CSVData(Dataset):
+    """
+    Customisable CSV dataset class.
+    """
+
     def __init__(self, file: Union[str, Path]) -> None:
         """
         Define dataset stored in CSV file.
@@ -159,7 +163,7 @@ class CSVData(Dataset):
         :type file: str | pathlib.Path
         """
         super().__init__()
-        with open(file, "r") as db:
+        with open(file, "r", encoding="utf-8") as db:
             self.data = db.readlines()
         self.header_idx_dict: Dict[str, List[int]] = {}
         for key, i in enumerate(self.data[0].replace("\n", "").split(",")):

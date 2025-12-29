@@ -22,7 +22,7 @@ def test():
     x3 = model_aot.module()(*example_args)
     assert (x3 != x1).float().sum() == 0
     try:
-        model.compile()
+        model.compile(fullgraph=True)
         x2 = model.forward(*example_args)
         assert (x2 != x1).float().sum() == 0
     except RuntimeError as e:

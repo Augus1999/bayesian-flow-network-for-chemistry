@@ -21,7 +21,7 @@ __all__ = [
     "spectra",
 ]
 __version__ = "2.4.0"
-__author__ = "Nianze A. Tao (Omozawa Sueno)"
+__author__ = "Nianze A. Tao"
 
 
 def __dir__() -> List[str]:
@@ -37,10 +37,10 @@ def __getattr__(name: str) -> Any:
     else:
         try:
             return globals()[name]
-        except KeyError:
+        except KeyError as exc:
             raise AttributeError(
                 f"Module 'bayesianflow_for_chem' has no attribute '{name}'"
-            )
+            ) from exc
 
 
 if TYPE_CHECKING:
