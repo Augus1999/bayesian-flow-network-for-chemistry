@@ -45,13 +45,13 @@ semi_autoregressive = false
 enable_lora = false
 dynamic_padding = false                  # <-- only set to true when pretraining a model
 restart = ""                             # <-- a checkpoint file in absolute path if necessary
-dataset = "home/user/project/dataset/qm9.csv"
+dataset = "/home/user/project/dataset/qm9.csv"
 molecule_tag = "smiles"                  # <-- the header tag under which the molecules are stored
 objective_tag = ["homo", "lumo", "gap"]  # <-- the header tag(s) under which the objective values are stored; set to empty array [] if the model is unconditional
 enforce_validity = true                  # <-- no effect if SMILES or SAFE is not used
 logger_name = "wandb"                    # <-- "wandb", "csv" or "tensorboard"
-logger_path = "home/user/project/logs"
-checkpoint_save_path = "home/user/project/ckpt"
+logger_path = "/home/user/project/logs"
+checkpoint_save_path = "/home/user/project/ckpt"
 train_strategy = "auto"                  # <-- any strategy supported by Lightning, e.g., "ddp"
 accumulate_grad_batches = 1
 enable_progress_bar = false
@@ -72,7 +72,7 @@ sample_template = ""                        # <-- template for mol2mol task; lea
 unwanted_token = []
 exclude_invalid = true                      # <-- whether to only store valid samples
 exclude_duplicate = true                    # <-- whether to only store unique samples
-result_file = "home/user/project/result/result.csv"
+result_file = "/home/user/project/result/result.csv"
 ```
 
 Important notes:
@@ -102,7 +102,7 @@ base_model = ""                      # <-- specify a base model checkpoint in ab
 
 #### 4.3. Defining customised behaviours
 
-Since version 2.2.0, it is possible to pass a Python3 script to the program via `plugin_script={PATH\TO\YOUR\SCRIPT.py}` in `[YOUR_CONFIG.toml]` to control the behaviours of dataset loading and sequence padding. Recently, the accepted customised values are `collate_fn`, `num_workers`, `shuffle`, `max_sequence_length`, and `CustomData`.
+Since version 2.2.0, it is possible to pass a Python3 script to the program via `plugin_script={PATH/TO/YOUR/SCRIPT.py}` in `[YOUR_CONFIG.toml]` to control the behaviours of dataset loading and sequence padding. Recently, the accepted customised values are `collate_fn`, `num_workers`, `shuffle`, `max_sequence_length`, and `CustomData`.
 
 For instance, to disable shuffling the batches
 
@@ -156,3 +156,13 @@ class CustomData(CSVData):
 In order to tell the program which customised values should be used, it is necessary to encapsulate them in `__all__` variable, e.g., `__all__ = ["collate_fn", "num_workers", "shuffle", "max_sequence_length", "CustomData"]`.
 
 Note that (1) if you define a dataset class not inherited from `CSVData`, make sure you include the `map(...)` method. If `map(...)` method is unnecessary for your `CustomData`, set it to `lambda x: None`; (2) if `max_sequence_length` is not provided, the program will always calculate this value even when `dynamic_padding = true` is set in `[YOUR_CONFIG.toml]`. To bypass this behaviour, set `max_sequence_length = "n.a."`; (3) for safety reasons, we banned the use of `open` inside the plugin script. Please use methods provided by `pandas`, `scipy`, etc. A detailed example can be found [here](https://github.com/Augus1999/bayesian-flow-network-for-chemistry/blob/main/example/cli/plugin.py).
+
+### 5. Get Example Config Files
+
+Since version _2.4.0_, it became possible to obtain example configurations from the CLI, i.e.,
+
+```bash
+madmol --example_config
+```
+
+This command will bring you a `config.toml` file and a `model_config.toml` file under current working directory with pre-defined configurations. You then can change the contents to fit thy own purpose.
