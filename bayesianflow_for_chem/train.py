@@ -47,14 +47,16 @@ def focal_loss(
     gamma: int = 2,
     reduction: Literal["none", "mean", "sum"] = "mean",
 ) -> Tensor:
-    """
-    Focal Loss implementation.
+    r"""
+    Focal Loss implementation for binary and multi-class cases.
+
+    .. math:: $FL = -\alpha(1 - p_t)^{gamma}ln(p_t)$
 
     :param input: predicted logits;   shape: (n_b, n_class)
     :param target: labelled classes;  shape: (n_class)
     :param alpha: class balancing factor
     :param gamma: focusing parameter
-    :param reduction: `'none'`, `'mean'` or `'sum'`
+    :param reduction: `'none'`, `'mean'` or `'sum'`; default is `'mean'`
     :type input: torch.Tensor
     :type target: torch.Tensor
     :type alpha: float | list | None
@@ -63,19 +65,22 @@ def focal_loss(
     :return: focal loss value
     :rtype: torch.Tensor
     """
-    assert input.dim() == 2
-    assert target.dim() == 1
-    assert (K := input.shape[-1]) == target.shape[0]
+    assert input.dim() == 2, "The expected shape is (n_batch, n_class)."
+    assert target.dim() == 1, "The expected shape is (n_class,)."
+    assert input.shape[0] == target.shape[0], "Shape mismatched."
+    K = input.shape[-1]
     if isinstance(alpha, (list, tuple)):
-        assert K == len(alpha)
+        assert K == (
+            k := len(alpha)
+        ), f"We have {K} classes but you only provided {k} balancing factors."
         alpha = input.new_tensor(alpha)
     elif isinstance(alpha, float):
-        assert K == 2
+        assert K == 2, "A float alpha is only accecpted for binary cases."
         alpha = input.new_tensor([1 - alpha, alpha])
-    p = F.softmax(input, -1)
+    p, p_ = F.softmax(input, -1), F.softmax(-input, -1)
     target_onehot = F.one_hot(target, K).float()
-    p_t = p * target_onehot + (1 - p) * (1 - target_onehot)
-    loss = -(1 - p_t).pow(gamma) * p_t.log()
+    p_t = p * target_onehot + p_ * (1 - target_onehot)
+    loss = -(1 - p_t).pow(gamma) * (p_t + 1e-8).log()
     if torch.is_tensor(alpha):
         alpha_t = alpha.gather(0, target)
         loss = alpha_t.unsqueeze(1) * loss
