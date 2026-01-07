@@ -96,10 +96,10 @@ cwd = Path(__file__).parent
 plugin_path = cwd / "plugin/test_plugin.py"
 if not os.path.exists(plugin_path.parent):
     os.makedirs(plugin_path.parent)
-with open(plugin_path, "w") as f:
+with open(plugin_path, "w", encoding="utf-8") as f:
     f.write(script_str)
 plugin_path2 = cwd / "plugin/test_plugin2.py"
-with open(plugin_path2, "w") as f:
+with open(plugin_path2, "w", encoding="utf-8") as f:
     f.write(script_str2)
 
 

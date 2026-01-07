@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 # Author: Nianze A. Tao (Omozawa Sueno)
 """
-`bayesianflow_for_chem.tool.test` should work with user provided metrics.
+`bayesianflow_for_chem.tool.test` should work with user provided metrics. \n
+Customised loss function should work as well.
 """
 from functools import partial
 import torch
+import pytest
 import numpy as np
 from scipy.stats import pearsonr
 from sklearn.metrics import f1_score as _f1_score
@@ -12,6 +14,7 @@ from torch.utils.data import DataLoader, Dataset
 from bayesianflow_for_chem import ChemBFN, MLP
 from bayesianflow_for_chem.data import VOCAB_COUNT, smiles2token, collate
 from bayesianflow_for_chem.tool import test as _test
+from bayesianflow_for_chem.train import focal_loss
 
 
 class DummyMLP(MLP):
@@ -104,7 +107,7 @@ res3 = {
 }
 
 
-def test():
+def test_test_method():
     result1 = _test(model, mlp1, loader1, "regression", other_metrics={"R": r_score})
     result2 = _test(
         model,
@@ -123,3 +126,15 @@ def test():
     assert result1 == res1
     assert result2 == res2
     assert result3 == res3
+
+
+@pytest.mark.parametrize(
+    "input,target,gamma,alpha",
+    [
+        (torch.randn((128, 10)), torch.randint(0, 9, (128,)), 12, None),
+        (torch.randn((64, 2)), torch.randint(0, 1, (64,)), 2, None),
+        (torch.randn((16, 2)), torch.randint(0, 1, (16,)), 4, 0.25),
+    ],
+)
+def test_focal_loss(input, target, gamma, alpha):
+    assert focal_loss(input, target, alpha, gamma) > 0

@@ -32,28 +32,28 @@ with open(data_path, "w") as f:
 
 def test():
     split_dataset(data_path, [8, 1, 1], "random")
-    with open(cwd / "dataset/dummy_data_train.csv", "r") as f:
+    with open(cwd / "dataset/dummy_data_train.csv", "r", encoding="utf-8") as f:
         d = f.readlines()
     assert len(d) == 9
     assert d[0] == "smiles,c\n"
-    with open(cwd / "dataset/dummy_data_test.csv", "r") as f:
+    with open(cwd / "dataset/dummy_data_test.csv", "r", encoding="utf-8") as f:
         d = f.readlines()
     assert len(d) == 2
     assert d[0] == "smiles,c\n"
-    with open(cwd / "dataset/dummy_data_val.csv", "r") as f:
+    with open(cwd / "dataset/dummy_data_val.csv", "r", encoding="utf-8") as f:
         d = f.readlines()
     assert len(d) == 2
     assert d[0] == "smiles,c\n"
     split_dataset(data_path, [8, 1, 1], "scaffold")
-    with open(cwd / "dataset/dummy_data_train.csv", "r") as f:
+    with open(cwd / "dataset/dummy_data_train.csv", "r", encoding="utf-8") as f:
         d = f.readlines()
     assert len(d) == 9
     assert d[0] == "smiles,c\n"
-    with open(cwd / "dataset/dummy_data_test.csv", "r") as f:
+    with open(cwd / "dataset/dummy_data_test.csv", "r", encoding="utf-8") as f:
         d = f.readlines()
     assert len(d) == 2
     assert d[0] == "smiles,c\n"
-    with open(cwd / "dataset/dummy_data_val.csv", "r") as f:
+    with open(cwd / "dataset/dummy_data_val.csv", "r", encoding="utf-8") as f:
         d = f.readlines()
     assert len(d) == 2
     assert d[0] == "smiles,c\n"
