@@ -175,6 +175,8 @@ class Model(LightningModule):
         :return:
         :rtype: None
         """
+        if not workdir.exists():
+            workdir.mkdir()
         if self.model.lora_enabled:
             torch.save(
                 {
@@ -302,6 +304,8 @@ class Regressor(LightningModule):
         :return:
         :rtype: None
         """
+        if not workdir.exists():
+            workdir.mkdir()
         torch.save(
             {"nn": self.mlp.state_dict(), "hparam": self.mlp.hparam},
             workdir / "readout.pt",

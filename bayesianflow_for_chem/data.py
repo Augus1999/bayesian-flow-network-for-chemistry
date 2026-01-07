@@ -112,11 +112,27 @@ def split_selfies(selfies: str) -> List[str]:
 
 
 def smiles2token(smiles: str) -> Tensor:
+    """
+    SMILES string -> token tensor.
+
+    :param smiles: SMILES string
+    :type smiles: str
+    :return: token tensor;  shape: (n_token)
+    :rtype: torch.Tensor
+    """
     # start token: <start> = 1; end token: <esc> = 2
     return torch.tensor([1] + smiles2vec(smiles) + [2], dtype=torch.long)
 
 
 def fasta2token(fasta: str) -> Tensor:
+    """
+    FASTA string -> token tensor.
+
+    :param fasta: FASTA string
+    :type fasta: str
+    :return: token tensor;  shape: (n_token)
+    :rtype: torch.Tensor
+    """
     # start token: <start> = 1; end token: <end> = 2
     return torch.tensor([1] + fasta2vec(fasta) + [2], dtype=torch.long)
 

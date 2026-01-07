@@ -172,18 +172,27 @@ class _PluginStaticValidator(ast.NodeVisitor):
         self.defined_symbols = set()
 
     def visit_Import(self, node: ast.Import) -> None:
+        """
+        Raise error when encountered an illegal import.
+        """
         for alias in node.names:
             root = alias.name.split(".")[0]
             if root in _FORBIDDEN_PLUGIN_IMPORTS:
                 raise ValueError(f"Forbidden import: {root}")
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        """
+        Raise error when encountered an illegal import.
+        """
         if node.module:
             root = node.module.split(".")[0]
             if root in _FORBIDDEN_PLUGIN_IMPORTS:
                 raise ValueError(f"Forbidden import: {root}")
 
     def visit_Call(self, node: ast.Call) -> None:
+        """
+        Raise error when encountered an illegal function/method call.
+        """
         if isinstance(node.func, ast.Name):
             if node.func.id in _FORBIDDEN_PLUGIN_CALLS:
                 raise ValueError(f"Forbidden call: {node.func.id}")
@@ -193,15 +202,24 @@ class _PluginStaticValidator(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
+        """
+        Raise error when trying to reach dangerous atterbute.
+        """
         if node.attr in _FORBIDDEN_PLUGIN_ATTRS:
             raise ValueError(f"Forbidden attribute: {node.attr}")
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """
+        Examine the nodes inside a function.
+        """
         self.defined_symbols.add(node.name)
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        """
+        Examine the nodes inside a class.
+        """
         self.defined_symbols.add(node.name)
         self.generic_visit(node)
 
@@ -462,12 +480,10 @@ def _encode(
             obj.extend([float(j) for j in x[i]])
         encoded["value"] = torch.tensor(obj, dtype=torch.float32)
     if "mask" in x and not "mask" in obj_tag:
-        import numpy as np
-
         mask = x["mask"]
         if torch.is_tensor(mask):
             encoded["mask"] = mask
-        elif isinstance(mask, (list, tuple, np.ndarray)):
+        else:
             encoded["mask"] = torch.tensor(mask, dtype=torch.float32)
     return encoded
 

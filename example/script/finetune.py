@@ -91,11 +91,12 @@ test_dataloader = DataLoader(test_dataset, 32, collate_fn=collate)
 if __name__ == "__main__":
     os.environ["PYTORCH_ALLOC_CONF"] = "max_split_size_mb:64"
     trainer.fit(regressor, train_dataloader, val_dataloader)
-    regressor.export_model(workdir)
+    regressor.export_model(workdir / "last")
     result = test(model, regressor.mlp, test_dataloader, l_hparam["mode"])
     print("last:", result)
     regressor = Regressor.load_from_checkpoint(
         trainer.checkpoint_callback.best_model_path, model=model, mlp=mlp
     )
+    regressor.export_model(workdir / "best")
     result = test(regressor.model, regressor.mlp, test_dataloader, l_hparam["mode"])
     print("best:", result)

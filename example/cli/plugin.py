@@ -44,6 +44,7 @@ class CustomData(CSVData):
                 self.chunk_index += 1
 
         row = self.current_chunk.iloc[row_idx]
+        # You can add "mask": torch.tensor(...) to enable the masked training.
         return self.mapping({"safe": [row.safe]})
 
 

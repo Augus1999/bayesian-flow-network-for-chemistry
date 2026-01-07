@@ -165,11 +165,15 @@ class Linear(nn.Linear):
         return result
 
 
-def modulate(x: Tensor, shift: Tensor, scale: Tensor) -> Tensor:
+def _modulate(x: Tensor, shift: Tensor, scale: Tensor) -> Tensor:
     return x * (1 + scale) + shift
 
 
 class RoPE(nn.Module):
+    """
+    XPOS variation of RoPE block.
+    """
+
     def __init__(self, channel: int = 512, num_head: int = 8) -> None:
         """
         Rotary position embedding block with XPOS method.
@@ -210,6 +214,10 @@ class RoPE(nn.Module):
 
 
 class Attention(nn.Module):
+    """
+    The multi-head self-attention layer using RoPE.
+    """
+
     def __init__(self, channel: int = 512, num_head: int = 8) -> None:
         """
         Multi-head self-attention block.
@@ -284,6 +292,10 @@ class Attention(nn.Module):
 
 
 class TransformerLayer(nn.Module):
+    """
+    Transformer encoding layer.
+    """
+
     def __init__(
         self, channel: int = 512, num_head: int = 8, dropout: float = 0.01
     ) -> None:
@@ -333,8 +345,8 @@ class TransformerLayer(nn.Module):
         """
         c = self.adaln_modulation(c)
         shift, scale, gate, shift_ffn, scale_ffn, gate_ffn = c.chunk(6, -1)
-        x = x + gate * self.attention(modulate(self.norm1(x), shift, scale), pe, mask)
-        x = x + gate_ffn * self.ffn(modulate(self.norm2(x), shift_ffn, scale_ffn))
+        x = x + gate * self.attention(_modulate(self.norm1(x), shift, scale), pe, mask)
+        x = x + gate_ffn * self.ffn(_modulate(self.norm2(x), shift_ffn, scale_ffn))
         return x
 
     def enable_lora(
@@ -357,6 +369,10 @@ class TransformerLayer(nn.Module):
 
 
 class FinalLayer(nn.Module):
+    """
+    The output layer.
+    """
+
     def __init__(self, num_vocab: int, channel: int = 512) -> None:
         """
         The final layer of model.
@@ -389,7 +405,7 @@ class FinalLayer(nn.Module):
         :rtype: torch.Tensor
         """
         shift, scale = self.adaln_modulation(c).chunk(2, -1)
-        x = modulate(self.norm_final(x), shift, scale)
+        x = _modulate(self.norm_final(x), shift, scale)
         if return_logits:
             return self.linear(x)
         return x
