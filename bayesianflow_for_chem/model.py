@@ -84,6 +84,10 @@ class MLP(nn.Module):
 
 
 class Linear(nn.Linear):
+    """
+    LoRA Linear layer.
+    """
+
     # Modified from https://github.com/microsoft/LoRA/blob/main/loralib/layers.py
     # We made it simpler and compatible with both `loralib` and `TorchScript`.
     def __init__(
@@ -145,6 +149,12 @@ class Linear(nn.Linear):
         self.weight.requires_grad_(False)
 
     def forward(self, x: Tensor) -> Tensor:
+        """
+        :param x: input tensor
+        :type x: torch.Tensor
+        :return: output tensor
+        :rtype: torch.Tensor
+        """
         result = linear(x, self.weight, self.bias)
         if self.lora_enabled and isinstance(self.lora_dropout, float):
             result += (

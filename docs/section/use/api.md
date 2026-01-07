@@ -170,6 +170,11 @@ bayesianflow_for_chem.tool.__merge_lora\___(_model_) &#8594; None
 
 &nbsp;&nbsp;&nbsp; In-place merge LoRA parameters into base model.
 
+
+bayesianflow_for_chem.train.__focal_loss__(_input_, _target_, _alpha_, _gamma_, _reduction_) &#8594; Tensor
+
+&nbsp;&nbsp;&nbsp; An implementation of binary and multi-class Focal Loss.
+
 ---
 
 _class_ bayesianflow_for_chem.tool.__GeometryConverter__

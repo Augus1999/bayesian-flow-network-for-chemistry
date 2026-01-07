@@ -618,11 +618,11 @@ class GeometryConverter:
             from subprocess import run
 
             # We need both CREST and xTB installed.
-            if run("crest --version", shell=True).returncode != 0:
+            if run("crest --version", shell=True, check=False).returncode != 0:
                 raise RuntimeError(
                     "`CREST` is not found! Make sure it is installed and added into the PATH."
                 )
-            if run("xtb --version", shell=True).returncode != 0:
+            if run("xtb --version", shell=True, check=False).returncode != 0:
                 raise RuntimeError(
                     "`xTB` is not found! Make sure it is installed and added into the PATH."
                 )
@@ -655,6 +655,7 @@ class GeometryConverter:
                 s = run(
                     f"crest mol.xyz -gfn2 -quick -prop ohess{f' --chrg {chrg}' if chrg != 0 else ''}{f' --uhf {uhf}' if uhf != 0 else ''}",
                     shell=True,
+                    check=False,
                     cwd=temp_dir,
                 )
                 if s.returncode == 0:

@@ -55,7 +55,10 @@ l_hparam = {
 model = ChemBFN.from_checkpoint(args.ckpt)
 mlp = MLP([512, 256, args.ntask], dropout=args.dropout)
 regressor = Regressor(model, mlp, l_hparam)
-
+# You can change the loss function, e.g.,
+# from functools import partial
+# from bayesianflow_for_chem.train import focal_loss
+# regressor.criteria.update({"classification": partial(focal_loss, gamma=0.25)})
 
 def encode(x):
     smiles = x["smiles"][0]

@@ -4,7 +4,7 @@
 Define ChemBFN and regressor models for training.
 """
 from pathlib import Path
-from typing import Dict, Tuple, Union, Optional
+from typing import Dict, Tuple, List, Union, Optional, Literal
 import torch
 import torch.optim as op
 import torch.nn.functional as F
@@ -16,10 +16,10 @@ from .scorer import Scorer
 
 DEFAULT_MODEL_HPARAM = {"lr": 5e-5, "lr_warmup_step": 1000, "uncond_prob": 0.2}
 DEFAULT_REGRESSOR_HPARAM = {
-    "mode": "regression",
+    "mode": (_mode := "regression"),
     "lr_scheduler_factor": 0.8,
     "lr_scheduler_patience": 20,
-    "lr_warmup_step": 1000,
+    "lr_warmup_step": 1000 if _mode == "regression" else 100,
     "max_lr": 1e-4,
     "freeze": False,
 }
@@ -38,6 +38,52 @@ def _lora_state_dict(model: ChemBFN) -> Dict[str, Tensor]:
     # We only loard 'real' LoRA parameters.
     state_dict = model.state_dict()
     return {k: state_dict[k] for k in state_dict if "lora_" in k}
+
+
+def focal_loss(
+    input: Tensor,
+    target: Tensor,
+    alpha: Union[float, List[float], None] = None,
+    gamma: int = 2,
+    reduction: Literal["none", "mean", "sum"] = "mean",
+) -> Tensor:
+    """
+    Focal Loss implementation.
+
+    :param input: predicted logits;   shape: (n_b, n_class)
+    :param target: labelled classes;  shape: (n_class)
+    :param alpha: class balancing factor
+    :param gamma: focusing parameter
+    :param reduction: `'none'`, `'mean'` or `'sum'`
+    :type input: torch.Tensor
+    :type target: torch.Tensor
+    :type alpha: float | list | None
+    :type gamma: int
+    :type reduction: str
+    :return: focal loss value
+    :rtype: torch.Tensor
+    """
+    assert input.dim() == 2
+    assert target.dim() == 1
+    assert (K := input.shape[-1]) == target.shape[0]
+    if isinstance(alpha, (list, tuple)):
+        assert K == len(alpha)
+        alpha = input.new_tensor(alpha)
+    elif isinstance(alpha, float):
+        assert K == 2
+        alpha = input.new_tensor([1 - alpha, alpha])
+    p = F.softmax(input, -1)
+    target_onehot = F.one_hot(target, K).float()
+    p_t = p * target_onehot + (1 - p) * (1 - target_onehot)
+    loss = -(1 - p_t).pow(gamma) * p_t.log()
+    if torch.is_tensor(alpha):
+        alpha_t = alpha.gather(0, target)
+        loss = alpha_t.unsqueeze(1) * loss
+    if reduction == "sum":
+        return loss.sum()
+    if reduction == "mean":
+        return loss.mean()
+    return loss
 
 
 class Model(LightningModule):
@@ -176,6 +222,7 @@ class Regressor(LightningModule):
         if model.lora_enabled:
             _mark_only_lora_as_trainable(self.model)
         assert hparam["mode"] in ("regression", "classification")
+        self.criteria = {"regression": F.mse_loss, "classification": F.cross_entropy}
 
     @staticmethod
     def _mask_label(label: Tensor) -> Tuple[Tensor, Tensor]:
@@ -188,13 +235,16 @@ class Regressor(LightningModule):
     def training_step(self, batch: Dict[str, Tensor]) -> Tensor:
         x, y = batch["token"], batch["value"]
         z = self.model.inference(x, self.mlp)
+        criteria = self.criteria[self.hparams.mode]
         if self.hparams.mode == "classification":
             n_b, n_y = y.shape
             z = z.reshape(n_b * n_y, -1)
-            loss = F.cross_entropy(z, y.reshape(-1).to(torch.long))
+            # loss = F.cross_entropy(z, y.reshape(-1).to(torch.long))
+            loss = criteria(z, y.reshape(-1).to(torch.long))
         else:
             y_mask, y = self._mask_label(y)
-            loss = F.mse_loss(z * y_mask, y, reduction="mean")
+            # loss = F.mse_loss(z * y_mask, y, reduction="mean")
+            loss = criteria(z * y_mask, y, reduction="mean")
         self.log("train_loss", loss.item())
         return loss
 
