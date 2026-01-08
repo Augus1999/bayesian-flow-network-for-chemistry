@@ -4,7 +4,7 @@ import os
 import re
 from pathlib import Path
 from shutil import rmtree
-from setuptools import setup  # , find_packages
+from setuptools import setup
 
 source_path = Path("bayesianflow_for_chem")
 
@@ -44,12 +44,15 @@ setup(
     long_description_content_type="text/markdown",
     license="AGPL-3.0-or-later",
     license_files=["LICEN[CS]E*"],
-    package_dir={"bayesianflow_for_chem": "bayesianflow_for_chem"},
+    package_dir={
+        "bayesianflow_for_chem": "bayesianflow_for_chem",
+        "bayesianflow_for_chem._data": "bayesianflow_for_chem/_data",
+    },
     package_data={"bayesianflow_for_chem": ["./_data/*.txt"]},
     include_package_data=True,
     author="Nianze A. Tao",
     author_email="tao-nianze@hiroshima-u.ac.jp",
-    # packages=find_packages(),
+    packages=["bayesianflow_for_chem", "bayesianflow_for_chem._data"],
     python_requires=">=3.11",
     install_requires=[
         "rdkit>=2025.3.5",
