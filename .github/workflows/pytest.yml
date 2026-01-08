@@ -6,10 +6,10 @@ name: CI
 on:
   push:
     branches: [ "main" ]
-    paths: [ "test/*.py", "bayesianflow_for_chem/*.py" ]
+    paths: [ "test/*.py", "bayesianflow_for_chem/*.py", "setup.py" ]
   pull_request:
     branches: [ "main" ]
-    paths: [ "test/*.py", "bayesianflow_for_chem/*.py" ]
+    paths: [ "test/*.py", "bayesianflow_for_chem/*.py", "setup.py" ]
 
 permissions:
   contents: read
