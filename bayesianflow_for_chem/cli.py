@@ -11,7 +11,17 @@ import argparse
 import datetime
 from pathlib import Path
 from functools import partial
-from typing import List, Tuple, Dict, Union, Callable, Any, Literal
+from typing import (
+    List,
+    Tuple,
+    Dict,
+    Union,
+    Optional,
+    Callable,
+    Any,
+    Literal,
+    get_type_hints,
+)
 import torch
 from rdkit.Chem import MolFromSmiles, CanonSmiles
 from lightning.pytorch.utilities import rank_zero_info, rank_zero_only
@@ -224,6 +234,177 @@ class _PluginStaticValidator(ast.NodeVisitor):
         self.generic_visit(node)
 
 
+def _isinstance(obj: object, class_or_tuple: Any):
+    try:
+        return isinstance(obj, class_or_tuple)
+    except TypeError as error:
+        _map = {
+            "typing.List": list,
+            "int": int,
+            "float": float,
+            "str": str,
+            "bool": bool,
+        }
+        _name = repr(class_or_tuple).replace("]", "").split("[")
+        if len(_name) == 2:
+            _a, _b = _name
+            _b = _b.split(",")
+            if len(_b) == 1:
+                _b = _b[0]
+                _a, _b = _map.get(_a), _map.get(_b)
+                if _a is not None and _b is not None:
+                    a = isinstance(obj, _a)
+                    if a and len(obj) > 0:
+                        b = True
+                        for i in obj:
+                            b &= isinstance(i, _b)
+                        return a & b
+                    return a
+        raise NotImplementedError(
+            "We haven't implemented this type checking yet."
+        ) from error
+
+
+class _ChemBFNConfig:
+    num_vocab: Union[int, str] = None
+    channel: int = None
+    num_layer: int = None
+    num_head: int = None
+    dropout: float = None
+    base_model: List[str] = []
+
+
+class _MLPConfig:
+    size: List[int] = None
+    class_input: bool = None
+    base_model: str = ""
+
+
+_ModelConfigType = Dict[str, Dict[str, Union[str, int, float, bool, List[int]]]]
+
+
+class _ModelConfig:
+    chembfn_config: Optional[_ChemBFNConfig] = None
+    mlp_config: Optional[_MLPConfig] = None
+
+    def __init__(self, model_config: Dict[str, Any], fn: str) -> None:
+        self._config = model_config
+        self._fn = fn
+        self._msg = []
+        self._flag_critical = 0
+        self._flag_warning = 0
+
+    def _check_type(self, obj: Union[_ChemBFNConfig, _MLPConfig]) -> None:
+        config_types = get_type_hints(obj)
+        for key, type_ in config_types.items():
+            if not _isinstance(i := getattr(obj, key), type_):
+                self._msg.append(
+                    f"{_CHECK_MESSAGE[1]} in {self._fn}: "
+                    f"Expected type for '{key}' is {repr(type_)} but got {type(i)} instead."
+                )
+                self._flag_critical += 1
+            elif key == "base_model":
+                if isinstance(i, list):
+                    if len(i) > 3:
+                        self._msg.append(
+                            f"{_CHECK_MESSAGE[1]} in {self._fn}: Too many checkpoint files."
+                        )
+                        self._flag_critical += 1
+                    else:
+                        for j in i:
+                            self._flag_critical += _check_path(
+                                j, self._fn, "Base model file %s does not exist."
+                            )
+                else:
+                    self._flag_critical += _check_path(
+                        i, self._fn, "Base model file %s does not exist."
+                    )
+            elif key == "num_vocab":
+                if not isinstance(i, int) and i == "match vocabulary size":
+                    self._msg.append(
+                        f"{_CHECK_MESSAGE[1]} in {self._fn}: You must specify num_vocab."
+                    )
+                    self._flag_critical += 1
+
+    def _check_missing_value(self, obj: Union[_ChemBFNConfig, _MLPConfig]) -> None:
+        for key in dir(obj):
+            if "__" not in key:
+                value = getattr(obj, key)
+                if value is None:
+                    self._msg.append(
+                        f"{_CHECK_MESSAGE[1]} in {self._fn}: Missing key '{key}'."
+                    )
+                    self._flag_critical += 1
+
+    def load(self) -> None:
+        """
+        Load configurations from dict.
+        """
+        if (not "ChemBFN" in self._config) or (
+            not isinstance(self._config["ChemBFN"], dict)
+        ):
+            self._msg.append(
+                f"{_CHECK_MESSAGE[1]} in {self._fn}: You must define a ChemBFN model."
+            )
+            self._flag_critical += 1
+        else:
+            self.chembfn_config = _ChemBFNConfig()
+            for key, item in self._config["ChemBFN"].items():
+                if hasattr(self.chembfn_config, key):
+                    setattr(self.chembfn_config, key, item)
+        if "MLP" in self._config:
+            if not isinstance(self._config["MLP"], dict):
+                self._msg.append(
+                    f"{_CHECK_MESSAGE[1]} in {self._fn}: You didn't define an MLP."
+                )
+                self._flag_critical += 1
+            else:
+                self.mlp_config = _MLPConfig()
+                for key, item in self._config["MLP"].items():
+                    if hasattr(self.mlp_config, key):
+                        setattr(self.mlp_config, key, item)
+
+    def check(self) -> None:
+        """
+        Check the configurations.
+        """
+        if a := self.chembfn_config is not None:
+            self._check_type(self.chembfn_config)
+            self._check_missing_value(self.chembfn_config)
+        if b := self.mlp_config is not None:
+            self._check_type(self.mlp_config)
+            self._check_missing_value(self.mlp_config)
+        if a and b:
+            if (s1 := self.chembfn_config.channel) is not None and (
+                s2 := self.mlp_config.size
+            ) is not None:
+                if s1 != (s2 := s2[-1]):
+                    self._msg.append(
+                        f"{_CHECK_MESSAGE[1]} in {self._fn}: "
+                        f"MLP hidden size {s2} should match ChemBFN hidden size {s1}."
+                    )
+                    self._flag_critical += 1
+
+    def parse(self) -> Tuple[int, int]:
+        """
+        Parse the configuration dict.
+        """
+        self.load()
+        self.check()
+        for msg in self._msg:
+            rank_zero_info(msg)
+        return self._flag_critical, self._flag_warning
+
+    def to_dict(self) -> _ModelConfigType:
+        """
+        Export parsed configurations back to dict.
+        """
+        config_dict = {"ChemBFN": self.chembfn_config.__dict__}
+        if self.mlp_config is not None:
+            config_dict["MLP"] = self.mlp_config.__dict__
+        return config_dict
+
+
 def _load_plugin(
     plugin_file: str,
 ) -> Dict[str, Union[int, bool, Callable, object, None]]:
@@ -262,7 +443,7 @@ def _check_path(
 
 def _save_job_info(
     runtime_config: Dict[str, Union[str, Dict[str, Any]]],
-    model_config: Dict[str, Dict[str, Union[str, int, float, bool, List[int]]]],
+    model_config: _ModelConfigType,
     save_path: Path,
 ) -> str:
     # Save config and return an unique time stamp.
@@ -335,7 +516,7 @@ def parse_cli(version: str) -> argparse.Namespace:
 
 def load_model_config(
     config_file: Union[str, Path],
-) -> Tuple[Dict[str, Dict[str, Union[str, int, float, bool, List[int]]]], int, int]:
+) -> Tuple[_ModelConfig, int, int]:
     """
     Load the model configurations from a .toml file and check the settings.
 
@@ -348,30 +529,9 @@ def load_model_config(
     """
     flag_critical, flag_warning = 0, 0
     with open(config_file, "rb") as f:
-        model_config = tomllib.load(f)
-    if (num_vocab := model_config["ChemBFN"]["num_vocab"]) != "match vocabulary size":
-        if not isinstance(num_vocab, int):
-            rank_zero_info(
-                f"\033[0;31mCritical\033[0;0m in {config_file}: You must specify num_vocab."
-            )
-            flag_critical += 1
-    if model_files := model_config["ChemBFN"]["base_model"]:
-        for fn in model_files:
-            flag_critical += _check_path(
-                fn, config_file, "Base model file %s does not exist."
-            )
-    if "MLP" in model_config:
-        a = model_config["ChemBFN"]["channel"]
-        b = model_config["MLP"]["size"][-1]
-        if a != b:
-            rank_zero_info(
-                f"\033[0;31mCritical\033[0;0m in {config_file}: MLP hidden size {b} should match ChemBFN hidden size {a}."
-            )
-            flag_critical += 1
-        if mlp_file := model_config["MLP"]["base_model"]:
-            flag_critical += _check_path(
-                mlp_file, config_file, "Base model file %s does not exist."
-            )
+        _model_config = tomllib.load(f)
+    model_config = _ModelConfig(_model_config, config_file)
+    flag_critical, flag_warning = model_config.parse()
     return model_config, flag_critical, flag_warning
 
 
@@ -511,7 +671,7 @@ def main_script(version: str) -> None:
     flag_warning = flag_w_model + flag_w_runtime
     if "train" in runtime_config:
         if runtime_config["train"]["enable_lora"]:
-            if not model_config["ChemBFN"]["base_model"]:
+            if not model_config.chembfn_config.base_model:
                 rank_zero_info(
                     f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained model first."
                 )
@@ -519,30 +679,36 @@ def main_script(version: str) -> None:
         if not os.path.exists(runtime_config["train"]["checkpoint_save_path"]):
             if not parser.dryrun:  # only create it in real tasks
                 os.makedirs(runtime_config["train"]["checkpoint_save_path"])
-        if runtime_config["train"]["objective_tag"] and not "MLP" in model_config:
+        if runtime_config["train"]["objective_tag"] and model_config.mlp_config is None:
             rank_zero_info(
                 f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You have specified objective tag in {parser.config} but did not define a MLP to handle it."
             )
             flag_warning += 1
-        if "MLP" in model_config and not runtime_config["train"]["objective_tag"]:
+        if (
+            model_config.mlp_config is not None
+            and not runtime_config["train"]["objective_tag"]
+        ):
             rank_zero_info(
                 f"\033[0;33mWarning\033[0;0m in {parser.model_config}: MLP not used."
             )
             flag_warning += 1
     else:
-        if not model_config["ChemBFN"]["base_model"]:
+        if not model_config.chembfn_config.base_model:
             rank_zero_info(
                 f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained ChemBFN model."
             )
             flag_warning += 1
-        if "MLP" in model_config and not model_config["MLP"]["base_model"]:
+        if (
+            model_config.mlp_config is not None
+            and not model_config.mlp_config.base_model
+        ):
             rank_zero_info(
                 f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained MLP."
             )
             flag_warning += 1
     if "inference" in runtime_config:
         if runtime_config["inference"]["guidance_objective"]:
-            if not "MLP" in model_config:
+            if model_config.mlp_config is None:
                 rank_zero_info(
                     f"\033[0;33mWarning\033[0;0m in {parser.model_config}: Oh no, you don't have a MLP."
                 )
@@ -561,12 +727,12 @@ def main_script(version: str) -> None:
         raise RuntimeError(_ERROR_MESSAGE)
     rank_zero_info(_HEAD_MESSAGE.format(version))
     time_stamp = _save_job_info(
-        runtime_config, model_config, Path(parser.config).parent
+        runtime_config, model_config.to_dict(), Path(parser.config).parent
     )
     # ####### build tokeniser #######
     tokeniser_config: str = runtime_config["tokeniser"]
     tokeniser_name = tokeniser_config["name"].lower()
-    if tokeniser_name == "smiles" or tokeniser_name == "safe":
+    if tokeniser_name in ("smiles", "safe"):
         num_vocab = VOCAB_COUNT
         vocab_keys = VOCAB_KEYS
         tokeniser = smiles2token
@@ -593,23 +759,31 @@ def main_script(version: str) -> None:
 
         tokeniser = selfies2token
     # ####### build ChemBFN #######
-    base_model = model_config["ChemBFN"]["base_model"]
-    if model_config["ChemBFN"]["num_vocab"] == "match vocabulary size":
-        model_config["ChemBFN"]["num_vocab"] = num_vocab
+    base_model = model_config.chembfn_config.base_model
+    if model_config.chembfn_config.num_vocab == "match vocabulary size":
+        model_config.chembfn_config.num_vocab = num_vocab
     if base_model:
-        bfn = ChemBFN.from_checkpoint(*model_config["ChemBFN"]["base_model"])
+        bfn = ChemBFN.from_checkpoint(*model_config.chembfn_config.base_model)
     else:
         bfn = ChemBFN(
-            **{k: v for k, v in model_config["ChemBFN"].items() if k != "base_model"}
+            **{
+                k: v
+                for k, v in model_config.chembfn_config.__dict__.items()
+                if k != "base_model"
+            }
         )
     # ####### build MLP #######
-    if "MLP" in model_config:
-        base_model = model_config["MLP"]["base_model"]
+    if model_config.mlp_config is not None:
+        base_model = model_config.mlp_config.base_model
         if base_model:
             mlp = MLP.from_checkpoint(base_model)
         else:
             mlp = MLP(
-                **{k: v for k, v in model_config["MLP"].items() if k != "base_model"}
+                **{
+                    k: v
+                    for k, v in model_config.mlp_config.__dict__.items()
+                    if k != "base_model"
+                }
             )
     else:
         mlp = None
@@ -814,7 +988,7 @@ def main_script(version: str) -> None:
                 )
             if runtime_config["inference"]["exclude_invalid"]:
                 s = [i for i in s if i]
-                if tokeniser_name == "smiles" or tokeniser_name == "safe":
+                if tokeniser_name in ("smiles", "safe"):
                     s = [CanonSmiles(i) for i in s if MolFromSmiles(i)]
             mols.extend(s)
             if runtime_config["inference"]["exclude_duplicate"]:

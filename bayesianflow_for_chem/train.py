@@ -105,14 +105,16 @@ class Model(LightningModule):
     ) -> None:
         """
         A `~lightning.LightningModule` wrapper of bayesian flow network for chemistry model.\n
-        This module is used in training stage only. By calling `Model(...).export_model(YOUR_WORK_DIR)` after training,
-        the model(s) will be saved to `YOUR_WORK_DIR/model.pt` (if LoRA is enabled then `YOUR_WORK_DIR/lora.pt`)
-        and (if exists) `YOUR_WORK_DIR/mlp.pt`.
+        This module is used in training stage only. 
+        By calling `Model(...).export_model(YOUR_WORK_DIR)` after training,
+        the model(s) will be saved to `YOUR_WORK_DIR/model.pt` 
+        (if LoRA is enabled then `YOUR_WORK_DIR/lora.pt`) and (if exists) `YOUR_WORK_DIR/mlp.pt`.
 
         :param model: `~bayesianflow_for_chem.model.ChemBFN` instance.
         :param mlp: `~bayesianflow_for_chem.model.MLP` instance or `None`.
         :param scorer: `~bayesianflow_for_chem.scorer.Scorer` instance or `None`.
-        :param hparam: a `dict` instance of hyperparameters. See `bayesianflow_for_chem.train.DEFAULT_MODEL_HPARAM`.
+        :param hparam: a `dict` instance of hyperparameters. 
+                       See `bayesianflow_for_chem.train.DEFAULT_MODEL_HPARAM`.
         :type model: bayesianflow_for_chem.model.ChemBFN
         :type mlp: bayesianflow_for_chem.model.MLP | None
         :type scorer: bayesianflow_for_chem.scorer.Scorer | None
@@ -209,14 +211,16 @@ class Regressor(LightningModule):
         hparam: Dict[str, Union[str, int, float, bool]] = DEFAULT_REGRESSOR_HPARAM,
     ) -> None:
         """
-        A `~lightning.LightningModule` wrapper of bayesian flow network for chemistry regression or classification model.\n
-        This module is used in training stage only. By calling `Regressor(...).export_model(YOUR_WORK_DIR)` after training,
-        the models will be saved to `YOUR_WORK_DIR/model_ft.pt` (if LoRA is enabled then `YOUR_WORK_DIR/lora.pt`)
-        and `YOUR_WORK_DIR/readout.pt`.
+        A `~lightning.LightningModule` wrapper of ChemBFN regression or classification model.\n
+        This module is used in training stage only. 
+        By calling `Regressor(...).export_model(YOUR_WORK_DIR)` after training,
+        the models will be saved to `YOUR_WORK_DIR/model_ft.pt` 
+        (or `YOUR_WORK_DIR/lora.pt` if LoRA is enabled) and `YOUR_WORK_DIR/readout.pt`.
 
         :param model: `~bayesianflow_for_chem.model.ChemBFN` instance.
         :param mlp: `~bayesianflow_for_chem.model.MLP` instance.
-        :param hparam: a `dict` instance of hyperparameters. See `bayesianflow_for_chem.train.DEFAULT_REGRESSOR_HPARAM`.
+        :param hparam: a `dict` instance of hyperparameters. 
+                       See `bayesianflow_for_chem.train.DEFAULT_REGRESSOR_HPARAM`.
         :type model: bayesianflow_for_chem.model.ChemBFN
         :type mlp: bayesianflow_for_chem.model.MLP
         :type hparam: dict

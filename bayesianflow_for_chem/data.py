@@ -198,8 +198,8 @@ class CSVData(Dataset):
         # valid `idx` should start from 1 instead of 0
         data: List[str] = self.data[idx + 1].replace("\n", "").split(",")
         data_dict: Dict[str, List[str]] = {}
-        for key in self.header_idx_dict:
-            data_dict[key] = [data[i] for i in self.header_idx_dict[key]]
+        for key, item in self.header_idx_dict.items():
+            data_dict[key] = [data[i] for i in item]
         return self.mapping(data_dict)
 
     def map(self, mapping: Callable[[Dict[str, List[str]]], Any]) -> None:

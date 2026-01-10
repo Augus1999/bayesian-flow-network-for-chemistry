@@ -139,7 +139,8 @@ def test(
 ) -> Dict[str, List[float]]:
     """
     Test the trained network. \n
-    Note: If your model is a `~torch.fx.GraphModule` instance exported via `torch.export.export(...)`,
+    Note:
+    If your model is a `~torch.fx.GraphModule` instance exported via `torch.export.export(...)`,
     set environment variable GRAPHMODULE_SAR_FLAG="1" to enable semi-autoregressive behaviour.
 
     :param model: pretrained ChemBFN model
@@ -148,7 +149,8 @@ def test(
     :param mode: testing mode chosen from `'regression'` and `'classification'`
     :param device: hardware accelerator
     :param other_metrics: a `dict` containing user defined metrics, e.g.,
-                          {"R": r_score}, where `r_score` takes `y_true` and `y_pred` and gives a float
+                          {"R": r_score},
+                          where `r_score` takes `y_true` and `y_pred` and gives a float
     :type model: bayesianflow_for_chem.model.ChemBFN
     :type mlp: bayesianflow_for_chem.model.MLP
     :type data: torch.utils.data.DataLoader
@@ -355,7 +357,8 @@ def sample(
     :param device: hardware accelerator
     :param vocab_keys: a list of (ordered) vocabulary
     :param separator: token separator; default is `""`
-    :param method: sampling method chosen from `"ODE:x"` or `"BFN"` where `x` is the value of sampling temperature; default is `"BFN"`
+    :param method: sampling method chosen from `"ODE:x"` or `"BFN"`,
+                   where `x` is the value of sampling temperature; default is `"BFN"`
     :param allowed_tokens: a list of allowed tokens; default is `"all"`
     :param sort: whether to sort the samples according to entropy values; default is `False`
     :type model: bayesianflow_for_chem.model.ChemBFN | bayesianflow_for_chem.model.EnsembleChemBFN
@@ -416,7 +419,8 @@ def inpaint(
     :param device: hardware accelerator
     :param vocab_keys: a list of (ordered) vocabulary
     :param separator: token separator; default is `""`
-    :param method: sampling method chosen from `"ODE:x"` or `"BFN"` where `x` is the value of sampling temperature; default is `"BFN"`
+    :param method: sampling method chosen from `"ODE:x"` or `"BFN"`,
+                   where `x` is the value of sampling temperature; default is `"BFN"`
     :param allowed_tokens: a list of allowed tokens; default is `"all"`
     :param sort: whether to sort the samples according to entropy values; default is `False`
     :type model: bayesianflow_for_chem.model.ChemBFN | bayesianflow_for_chem.model.EnsembleChemBFN
@@ -477,7 +481,8 @@ def optimise(
     :param device: hardware accelerator
     :param vocab_keys: a list of (ordered) vocabulary
     :param separator: token separator; default is `""`
-    :param method: sampling method chosen from `"ODE:x"` or `"BFN"` where `x` is the value of sampling temperature; default is `"BFN"`
+    :param method: sampling method chosen from `"ODE:x"` or `"BFN"`,
+                   where `x` is the value of sampling temperature; default is `"BFN"`
     :param allowed_tokens: a list of allowed tokens; default is `"all"`
     :param sort: whether to sort the samples according to entropy values; default is `False`
     :type model: bayesianflow_for_chem.model.ChemBFN | bayesianflow_for_chem.model.EnsembleChemBFN
@@ -534,7 +539,8 @@ def adjust_lora_(model: ChemBFN, lora_scale: float = 1.0) -> None:
     In-place adjust LoRA scaling parameter.
 
     :param model: trained ChemBFN model
-    :param lora_scale: LoRA scaling multiplier; setting a value smaller than 1 to decrease LoRA control
+    :param lora_scale: LoRA scaling multiplier;
+                       setting a value < 1 to decrease LoRA control
     :type model: bayesianflow_for_chem.model.ChemBFN
     :type lora_scale: float
     :return:
@@ -653,7 +659,8 @@ class GeometryConverter:
                 with open(Path(temp_dir) / "mol.xyz", "w", encoding="utf-8") as f:
                     f.write(xyz)
                 s = run(
-                    f"crest mol.xyz -gfn2 -quick -prop ohess{f' --chrg {chrg}' if chrg != 0 else ''}{f' --uhf {uhf}' if uhf != 0 else ''}",
+                    f"crest mol.xyz -gfn2 -quick -prop ohess"
+                    f"{f' --chrg {chrg}' if chrg != 0 else ''}{f' --uhf {uhf}' if uhf != 0 else ''}",
                     shell=True,
                     check=False,
                     cwd=temp_dir,

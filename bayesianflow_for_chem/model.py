@@ -487,7 +487,8 @@ class ChemBFN(nn.Module):
     ) -> None:
         """
         Enable LoRA parameters. \n
-        Warning: If the LoRA parameters already exist, all these parameters will be reset to default values.
+        Warning:
+        If the LoRA parameters already exist, all these parameters will be reset to default values.
 
         :param r: rank
         :param lora_alpha: LoRA alpha value
@@ -1440,7 +1441,8 @@ class EnsembleChemBFN(ChemBFN):
         Quantise the submodels. \n
         This method should be called, if necessary, before `torch.compile()`.
 
-        :param quantise_method: quantisation method; default is `bayesianflow_for_chem.tool.quantise_model_`
+        :param quantise_method: quantisation method;
+                                default is `bayesianflow_for_chem.tool.quantise_model_`
         :type quantise_method: callable | None
         :return:
         :rtype: None
