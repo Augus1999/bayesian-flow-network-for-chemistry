@@ -326,7 +326,7 @@ class _ModelConfig:
                             self._flag_critical += _check_path(
                                 j, self._fn, "Base model file %s does not exist."
                             )
-                else:
+                elif i:
                     self._flag_critical += _check_path(
                         i, self._fn, "Base model file %s does not exist."
                     )
