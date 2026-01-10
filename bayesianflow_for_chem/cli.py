@@ -306,14 +306,15 @@ class _ModelConfig:
         self._flag_warning = 0
 
     def _check_type(self, obj: Union[_ChemBFNConfig, _MLPConfig]) -> None:
-        config_types = obj.annotations
-        for key, type_ in config_types.items():
+        for key, type_ in obj.annotations.items():
             if not _isinstance(i := getattr(obj, key), type_):
-                self._msg.append(
-                    f"{_CHECK_MESSAGE[1]} in {self._fn}: "
-                    f"Expected type for '{key}' is {repr(type_)} but got {type(i)} instead."
-                )
-                self._flag_critical += 1
+                if i is not None:
+                    self._msg.append(
+                        f"{_CHECK_MESSAGE[1]} in {self._fn}: "
+                        f"Expected type for '{key}' is {repr(type_)}"
+                        f" but got {type(i)} instead."
+                    )
+                    self._flag_critical += 1
             elif key == "base_model":
                 if isinstance(i, list):
                     if len(i) > 3:
