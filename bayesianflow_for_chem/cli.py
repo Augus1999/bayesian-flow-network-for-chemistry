@@ -12,6 +12,7 @@ import datetime
 from pathlib import Path
 from functools import partial
 from typing import List, Tuple, Dict, Union, Optional, Callable, Any, Literal
+from typing import get_origin, get_args
 import torch
 from rdkit.Chem import MolFromSmiles, CanonSmiles
 from lightning.pytorch.utilities import rank_zero_info, rank_zero_only
@@ -228,31 +229,29 @@ def _isinstance(obj: object, class_or_tuple: Any):
     try:
         return isinstance(obj, class_or_tuple)
     except TypeError as error:
-        _map = {
-            "typing.List": list,
-            "int": int,
-            "float": float,
-            "str": str,
-            "bool": bool,
-        }
-        _name = repr(class_or_tuple).replace("]", "").split("[")
-        if len(_name) == 2:
-            _a, _b = _name
-            _b = _b.split(",")
-            if len(_b) == 1:
-                _b = _b[0]
-                _a, _b = _map.get(_a), _map.get(_b)
-                if _a is not None and _b is not None:
-                    a = isinstance(obj, _a)
-                    if a and len(obj) > 0:
-                        b = True
-                        for i in obj:
-                            b &= isinstance(i, _b)
-                        return a & b
-                    return a
-        raise NotImplementedError(
-            "We haven't implemented this type checking yet."
-        ) from error
+        origin_type = get_origin(class_or_tuple)
+        args_type = get_args(class_or_tuple)
+        origin_fit = isinstance(obj, origin_type)
+        if origin_fit:
+            if origin_type == list:
+                if len(args_type) > 1:
+                    return False
+                args_fit = True
+                for i in obj:
+                    args_fit &= isinstance(i, args_type[0])
+                return args_fit
+            if origin_type == tuple:
+                if len(args_type) != len(obj):
+                    return False
+                args_fit = True
+                for i, j in enumerate(obj):
+                    args_fit &= isinstance(j, args_type[i])
+                return args_fit
+            raise NotImplementedError(
+                f"We haven't implemented the type checking "
+                f"for {repr(class_or_tuple)} yet."
+            ) from error
+        return False
 
 
 class _ChemBFNConfig:
@@ -685,7 +684,8 @@ def main_script(version: str) -> None:
         if runtime_config["train"]["enable_lora"]:
             if not model_config.chembfn_config.base_model:
                 rank_zero_info(
-                    f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained model first."
+                    f"\033[0;33mWarning\033[0;0m in {parser.model_config}: "
+                    "You should load a pretrained model first."
                 )
                 flag_warning += 1
         if not os.path.exists(runtime_config["train"]["checkpoint_save_path"]):
@@ -693,7 +693,9 @@ def main_script(version: str) -> None:
                 os.makedirs(runtime_config["train"]["checkpoint_save_path"])
         if runtime_config["train"]["objective_tag"] and model_config.mlp_config is None:
             rank_zero_info(
-                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You have specified objective tag in {parser.config} but did not define a MLP to handle it."
+                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: "
+                f"You have specified objective tag in {parser.config} "
+                "but did not define a MLP to handle it."
             )
             flag_warning += 1
         if (
@@ -707,7 +709,8 @@ def main_script(version: str) -> None:
     else:
         if not model_config.chembfn_config.base_model:
             rank_zero_info(
-                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained ChemBFN model."
+                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: "
+                "You should load a pretrained ChemBFN model."
             )
             flag_warning += 1
         if (
@@ -715,14 +718,16 @@ def main_script(version: str) -> None:
             and not model_config.mlp_config.base_model
         ):
             rank_zero_info(
-                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: You should load a pretrained MLP."
+                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: "
+                "You should load a pretrained MLP."
             )
             flag_warning += 1
     if "inference" in runtime_config:
         if runtime_config["inference"]["guidance_objective"]:
             if model_config.mlp_config is None:
                 rank_zero_info(
-                    f"\033[0;33mWarning\033[0;0m in {parser.model_config}: Oh no, you don't have a MLP."
+                    f"\033[0;33mWarning\033[0;0m in {parser.model_config}: "
+                    "Oh no, you don't have a MLP."
                 )
                 flag_warning += 1
     if parser.dryrun:
