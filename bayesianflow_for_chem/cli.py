@@ -331,7 +331,7 @@ class _ModelConfig:
                         i, self._fn, "Base model file %s does not exist."
                     )
             elif key == "num_vocab":
-                if not isinstance(i, int) and i == "match vocabulary size":
+                if not isinstance(i, int) and i != "match vocabulary size":
                     self._msg.append(
                         f"{_CHECK_MESSAGE[1]} in {self._fn}: You must specify num_vocab."
                     )
