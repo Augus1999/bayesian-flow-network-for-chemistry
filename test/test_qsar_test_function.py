@@ -134,6 +134,7 @@ def test_test_method():
         (torch.randn((128, 10)), torch.randint(0, 9, (128,)), 12, None),
         (torch.randn((64, 2)), torch.randint(0, 1, (64,)), 2, None),
         (torch.randn((16, 2)), torch.randint(0, 1, (16,)), 4, 0.25),
+        (torch.randn((32, 3)), torch.randint(0, 1, (32,)), 2, [0.12, 0.32, 0.56]),
     ],
 )
 def test_focal_loss(input, target, gamma, alpha):

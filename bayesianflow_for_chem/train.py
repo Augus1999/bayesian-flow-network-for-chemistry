@@ -77,9 +77,9 @@ def focal_loss(
     elif isinstance(alpha, float):
         assert K == 2, "A float alpha is only accecpted for binary cases."
         alpha = input.new_tensor([1 - alpha, alpha])
-    p, p_ = F.softmax(input, -1), F.softmax(-input, -1)
+    p = F.softmax(input, -1)
     target_onehot = F.one_hot(target, K).float()
-    p_t = p * target_onehot + p_ * (1 - target_onehot)
+    p_t = p * target_onehot + (1 - p) * (1 - target_onehot)
     loss = -(1 - p_t).pow(gamma) * (p_t + 1e-8).log()
     if torch.is_tensor(alpha):
         alpha_t = alpha.gather(0, target)
