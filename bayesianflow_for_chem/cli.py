@@ -11,17 +11,7 @@ import argparse
 import datetime
 from pathlib import Path
 from functools import partial
-from typing import (
-    List,
-    Tuple,
-    Dict,
-    Union,
-    Optional,
-    Callable,
-    Any,
-    Literal,
-    get_type_hints,
-)
+from typing import List, Tuple, Dict, Union, Optional, Callable, Any, Literal
 import torch
 from rdkit.Chem import MolFromSmiles, CanonSmiles
 from lightning.pytorch.utilities import rank_zero_info, rank_zero_only
@@ -273,11 +263,32 @@ class _ChemBFNConfig:
     dropout: float = None
     base_model: List[str] = []
 
+    @property
+    def annotations(self) -> Dict[str, Any]:
+        """
+        Return annotations.
+        """
+        return {
+            "num_vocab": Union[int, str],
+            "channel": int,
+            "num_layer": int,
+            "num_head": int,
+            "dropout": float,
+            "base_model": List[str],
+        }
+
 
 class _MLPConfig:
     size: List[int] = None
     class_input: bool = None
     base_model: str = ""
+
+    @property
+    def annotations(self) -> Dict[str, Any]:
+        """
+        Return annotations.
+        """
+        return {"size": List[int], "class_input": bool, "base_model": str}
 
 
 _ModelConfigType = Dict[str, Dict[str, Union[str, int, float, bool, List[int]]]]
@@ -295,7 +306,7 @@ class _ModelConfig:
         self._flag_warning = 0
 
     def _check_type(self, obj: Union[_ChemBFNConfig, _MLPConfig]) -> None:
-        config_types = get_type_hints(obj)
+        config_types = obj.annotations
         for key, type_ in config_types.items():
             if not _isinstance(i := getattr(obj, key), type_):
                 self._msg.append(
