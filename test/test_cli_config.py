@@ -9,6 +9,7 @@ import tomllib
 import subprocess
 from pathlib import Path
 import pytest
+from bayesianflow_for_chem.cli import load_model_config
 
 
 cwd = Path(__file__).parent
@@ -30,7 +31,11 @@ def test():
     with open(example_path / "model_config.toml", "rb") as f:
         model_config_ = tomllib.load(f)
     assert model_config.items() == model_config_.items()
-
+    # ------- test config loading -------
+    mc, _, __ = load_model_config(cwd / "model_config.toml")
+    bfn_config, mlp_config = mc.chembfn_config, mc.mlp_config
+    assert len(bfn_config.config.keys()) == len(model_config["ChemBFN"].keys()) - 1
+    assert len(mlp_config.config.keys()) == len(model_config["MLP"].keys()) - 1
     # ------- try the example config -------
     with open(cwd / "config.toml", "r", encoding="utf-8") as f:
         _config = f.read()
