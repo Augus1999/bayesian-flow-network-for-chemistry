@@ -82,7 +82,8 @@ def smiles2vec(smiles: str) -> List[int]:
     :return: tokens w/o `<start>` and `<end>`
     :rtype: list
     """
-    tokens = [token for token in _smi_regex.findall(smiles)]
+    # tokens = [token for token in _smi_regex.findall(smiles)]
+    tokens = list(_smi_regex.findall(smiles))
     return [VOCAB_DICT[token] for token in tokens]
 
 
@@ -95,7 +96,8 @@ def fasta2vec(fasta: str) -> List[int]:
     :return: tokens w/o `<start>` and `<end>`
     :rtype: list
     """
-    tokens = [token for token in _fas_regex.findall(fasta)]
+    # tokens = [token for token in _fas_regex.findall(fasta)]
+    tokens = list(_fas_regex.findall(fasta))
     return [FASTA_VOCAB_DICT[token] for token in tokens]
 
 
@@ -108,7 +110,8 @@ def split_selfies(selfies: str) -> List[str]:
     :return: SELFIES vocab
     :rtype: list
     """
-    return [token for token in _sel_regex.findall(selfies)]
+    # return [token for token in _sel_regex.findall(selfies)]
+    return list(_sel_regex.findall(selfies))
 
 
 def smiles2token(smiles: str) -> Tensor:

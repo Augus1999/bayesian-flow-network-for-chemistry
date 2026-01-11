@@ -238,6 +238,7 @@ def _isinstance(obj: object, class_or_tuple: Any) -> bool:
         args_type = get_args(class_or_tuple)
         origin_fit = isinstance(obj, origin_type)
         if origin_fit:
+            # We only need to check `typing.List` and `typing.Tuple`.
             if origin_type == list:
                 if len(args_type) > 1:
                     return False
@@ -257,6 +258,14 @@ def _isinstance(obj: object, class_or_tuple: Any) -> bool:
                 f"for {repr(class_or_tuple)} yet."
             ) from error
         return False
+
+
+def _load_config(
+    config_dict: Dict[str, Any], config_class: Any, banned_attr: List[str]
+) -> None:  # save load
+    for k, v in config_dict.items():
+        if hasattr(config_class, k) and (k not in banned_attr) and ("__" not in k):
+            setattr(config_class, k, v)
 
 
 class _ChemBFNConfig:
@@ -310,6 +319,8 @@ class _MLPConfig:
 
 
 _ModelConfigType = Dict[str, Dict[str, Union[str, int, float, bool, List[int]]]]
+_TrIrConfigType = Dict[str, Union[str, int, float, bool, List[str], List[float]]]
+_RuntimeConfigType = Dict[str, Union[str, _TrIrConfigType]]
 
 
 class _ModelConfig:
@@ -383,9 +394,9 @@ class _ModelConfig:
             self._flag_critical += 1
         else:
             self.chembfn_config = _ChemBFNConfig()
-            for key, item in self._config["ChemBFN"].items():
-                if hasattr(self.chembfn_config, key):
-                    setattr(self.chembfn_config, key, item)
+            _load_config(
+                self._config["ChemBFN"], self.chembfn_config, ["config", "annotations"]
+            )
         if "MLP" in self._config:
             if not isinstance(self._config["MLP"], dict):
                 self._msg.append(
@@ -394,9 +405,9 @@ class _ModelConfig:
                 self._flag_critical += 1
             else:
                 self.mlp_config = _MLPConfig()
-                for key, item in self._config["MLP"].items():
-                    if hasattr(self.mlp_config, key):
-                        setattr(self.mlp_config, key, item)
+                _load_config(
+                    self._config["MLP"], self.mlp_config, ["config", "annotations"]
+                )
 
     def check(self) -> None:
         """
@@ -438,6 +449,13 @@ class _ModelConfig:
             config_dict["MLP"] = self.mlp_config.__dict__
         return config_dict
 
+    @property
+    def has_mlp(self) -> bool:
+        """
+        Check whether a MLP is defined.
+        """
+        return self.mlp_config is not None
+
 
 def _load_plugin(
     plugin_file: str,
@@ -476,9 +494,7 @@ def _check_path(
 
 
 def _save_job_info(
-    runtime_config: Dict[str, Union[str, Dict[str, Any]]],
-    model_config: _ModelConfigType,
-    save_path: Path,
+    runtime_config: _RuntimeConfigType, model_config: _ModelConfigType, save_path: Path
 ) -> str:
     # Save config and return an unique time stamp.
     time_stamp = datetime.datetime.now().strftime(r"%Y%m%d%H%M%S")
@@ -714,17 +730,14 @@ def main_script(version: str) -> None:
         if not os.path.exists(runtime_config["train"]["checkpoint_save_path"]):
             if not parser.dryrun:  # only create it in real tasks
                 os.makedirs(runtime_config["train"]["checkpoint_save_path"])
-        if runtime_config["train"]["objective_tag"] and model_config.mlp_config is None:
+        if runtime_config["train"]["objective_tag"] and not model_config.has_mlp:
             rank_zero_info(
                 f"{_CHECK_MESSAGE[2]} in {parser.model_config}: "
                 f"You have specified objective tag in {parser.config} "
                 "but did not define a MLP to handle it."
             )
             flag_warning += 1
-        if (
-            model_config.mlp_config is not None
-            and not runtime_config["train"]["objective_tag"]
-        ):
+        if model_config.has_mlp and not runtime_config["train"]["objective_tag"]:
             rank_zero_info(
                 f"{_CHECK_MESSAGE[2]} in {parser.model_config}: MLP not used."
             )
@@ -736,10 +749,7 @@ def main_script(version: str) -> None:
                 "You should load a pretrained ChemBFN model."
             )
             flag_warning += 1
-        if (
-            model_config.mlp_config is not None
-            and not model_config.mlp_config.base_model
-        ):
+        if model_config.has_mlp and not model_config.mlp_config.base_model:
             rank_zero_info(
                 f"{_CHECK_MESSAGE[2]} in {parser.model_config}: "
                 "You should load a pretrained MLP."
@@ -747,7 +757,7 @@ def main_script(version: str) -> None:
             flag_warning += 1
     if "inference" in runtime_config:
         if runtime_config["inference"]["guidance_objective"]:
-            if model_config.mlp_config is None:
+            if not model_config.has_mlp:
                 rank_zero_info(
                     f"{_CHECK_MESSAGE[2]} in {parser.model_config}: "
                     "Oh no, you don't have a MLP."
@@ -808,7 +818,7 @@ def main_script(version: str) -> None:
     else:
         bfn = ChemBFN(**model_config.chembfn_config.config)
     # ####### build MLP #######
-    if model_config.mlp_config is not None:
+    if model_config.has_mlp:
         base_model = model_config.mlp_config.base_model
         if base_model:
             mlp = MLP.from_checkpoint(base_model)

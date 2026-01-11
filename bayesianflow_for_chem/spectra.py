@@ -31,6 +31,14 @@ def build_uv_vis_spectrum(
     ).sum(0) * 40489.99421
 
 
+def build_ir_raman_spectrum() -> np.ndarray:
+    """
+    Build IR/Raman spectrum
+    """
+    # TODO
+    ...
+
+
 def spectra_wasserstein_score(
     spectrum_u: np.ndarray, spectrum_v: np.ndarray, x_axis: np.ndarray
 ) -> float:

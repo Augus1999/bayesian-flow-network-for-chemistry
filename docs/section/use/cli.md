@@ -18,7 +18,9 @@ madmol --help
 madmol [YOUR_CONFIG.toml] [YOUR_MODEL_CONFIG.toml] --dryrun
 ```
 
-This command will give you hints, if any, of misconfigurations that will probably terminate your job, e.g., setting conflicts, missing files, etc.
+This command will give you hints, if any, of misconfigurations that will probably terminate your job, _e.g._, setting conflicts, missing files, _etc_.
+
+> ⚠️ If you specified checkpoints, this process does not check the hyperparameters, weight shapes, _etc_, therefore the risk of encountering shape mismatch error during runtime is still there.
 
 ### 4. Run Your Job
 
@@ -102,7 +104,7 @@ base_model = ""                      # <-- specify a base model checkpoint in ab
 
 #### 4.3. Defining customised behaviours
 
-Since version 2.2.0, it is possible to pass a Python3 script to the program via `plugin_script={PATH/TO/YOUR/SCRIPT.py}` in `[YOUR_CONFIG.toml]` to control the behaviours of dataset loading and sequence padding. Recently, the accepted customised values are `collate_fn`, `num_workers`, `shuffle`, `max_sequence_length`, and `CustomData`.
+Since version _**2.2.0**_, it is possible to pass a Python3 script to the program via `plugin_script={PATH/TO/YOUR/SCRIPT.py}` in `[YOUR_CONFIG.toml]` to control the behaviours of dataset loading and sequence padding. Recently, the accepted customised values are `collate_fn`, `num_workers`, `shuffle`, `max_sequence_length`, and `CustomData`.
 
 For instance, to disable shuffling the batches
 
@@ -128,11 +130,12 @@ import random
 from bayesianflow_for_chem.data import collate
 
 def collate_fn(x):
+    # shufffle inside a mini-batch
     random.shuffle(x)
     return collate(x)
 ```
 
-or to define your own dataset object (e.g., chunked dataset class)
+or to define your own dataset object (_e.g._, chunked dataset class)
 
 ```python
 import torch
@@ -151,15 +154,19 @@ class CustomData(CSVData):
         if torch.is_tensor(idx):
             idx = idx.tolist()
         ...  # your code
+        return self.mapping(...)
 ```
 
-In order to tell the program which customised values should be used, it is necessary to encapsulate them in `__all__` variable, e.g., `__all__ = ["collate_fn", "num_workers", "shuffle", "max_sequence_length", "CustomData"]`.
+In order to tell the program which customised values should be used, it is necessary to encapsulate them in `__all__` variable, _e.g._, `__all__ = ["collate_fn", "num_workers", "shuffle", "max_sequence_length", "CustomData"]`.
 
-Note that (1) if you define a dataset class not inherited from `CSVData`, make sure you include the `map(...)` method. If `map(...)` method is unnecessary for your `CustomData`, set it to `lambda x: None`; (2) if `max_sequence_length` is not provided, the program will always calculate this value even when `dynamic_padding = true` is set in `[YOUR_CONFIG.toml]`. To bypass this behaviour, set `max_sequence_length = "n.a."`; (3) for safety reasons, we banned the use of `open` inside the plugin script. Please use methods provided by `pandas`, `scipy`, etc. A detailed example can be found [here](https://github.com/Augus1999/bayesian-flow-network-for-chemistry/blob/main/example/cli/plugin.py).
+Note that (1) if you define a dataset class not inherited from `CSVData`, make sure you include the `map(...)` method. If `map(...)` method is unnecessary for your `CustomData`, set it to `lambda x: None`; (2) if `max_sequence_length` is not provided, the program will always calculate this value even when `dynamic_padding = true` is set in `[YOUR_CONFIG.toml]`. To bypass this behaviour, set `max_sequence_length = "n.a."`; (3) for safety reasons, we banned the use of `open` inside the plugin script. Please use methods provided by `pandas`, `scipy`, _etc_. A detailed example can be found [here](https://github.com/Augus1999/bayesian-flow-network-for-chemistry/blob/main/example/cli/plugin.py).
+
+Tips:
+If you have a very large dataset, employing shuffle inside mini-batches rather than global shuffle will significantly accelerate the training process.
 
 ### 5. Get Example Config Files
 
-Since version _2.4.0_, it became possible to obtain example configurations from the CLI, i.e.,
+Since version _**2.4.0**_, it became possible to obtain example configurations from the CLI, _i.e._,
 
 ```bash
 madmol --example_config
