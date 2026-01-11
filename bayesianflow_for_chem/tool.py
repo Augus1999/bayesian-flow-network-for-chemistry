@@ -660,7 +660,8 @@ class GeometryConverter:
                     f.write(xyz)
                 s = run(
                     f"crest mol.xyz -gfn2 -quick -prop ohess"
-                    f"{f' --chrg {chrg}' if chrg != 0 else ''}{f' --uhf {uhf}' if uhf != 0 else ''}",
+                    f"{f' --chrg {chrg}' if chrg != 0 else ''}"
+                    f"{f' --uhf {uhf}' if uhf != 0 else ''}",
                     shell=True,
                     check=False,
                     cwd=temp_dir,

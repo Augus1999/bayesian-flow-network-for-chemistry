@@ -9,7 +9,8 @@ from typing import List, Tuple, Dict, Optional, Union, Callable, Self
 import torch
 import torch.nn as nn
 from torch import Tensor
-from torch.nn.functional import softmax, linear, dropout
+from torch.nn.functional import softmax, linear
+from torch.nn.functional import dropout as dropout_fn
 
 
 class MLP(nn.Module):
@@ -37,7 +38,7 @@ class MLP(nn.Module):
         :type dropout: float
         """
         super().__init__()
-        assert len(size) >= 2
+        assert len(size) >= 2, "You need at least 2 linear layers."
         self.class_input = class_input
         self.dropout = nn.Dropout(dropout if not class_input else 0.0)
         self.layers = nn.ModuleList(
@@ -158,7 +159,7 @@ class Linear(nn.Linear):
         result = linear(x, self.weight, self.bias)
         if self.lora_enabled and isinstance(self.lora_dropout, float):
             result += (
-                dropout(x, self.lora_dropout, self.training)
+                dropout_fn(x, self.lora_dropout, self.training)
                 @ self.lora_A.transpose(0, 1)
                 @ self.lora_B.transpose(0, 1)
             ) * self.scaling
@@ -1005,9 +1006,10 @@ class ChemBFN(nn.Module):
 
         :param x: input tokens;  shape: (n_b, n_t)
         :param mlp: MLP model
-        :param embed_fn: function that defines customised behaviour of molecular embedding extraction; \n
-                         this function should take an input latent tensor and output an embedding vector;
-                         default `None`
+        :param embed_fn: function that defines customised behaviour of
+                         molecular embedding extraction; \n
+                         this function should take an input latent tensor
+                         and output an embedding vector; default is `None`
 
         :type x: torch.Tensor
         :type mlp: bayesianflow_for_chem.model.MLP | torch.nn.Identity
@@ -1075,10 +1077,17 @@ class EnsembleChemBFN(ChemBFN):
         Ensemble of ChemBFN models from LoRA checkpoints.
 
         :param base_model_path: base model checkpoint file
-        :param lora_paths: a list of LoRA checkpoint files or a `dict` instance of these files
-        :param cond_heads: a list of conditioning network heads or a `dict` instance of these networks
-        :param adapter_weights: a list of weights of each LoRA finetuned model or a 'dict` instance of these weights; default is equally weighted
-        :param semi_autoregressive_flags: a list of the semi-autoregressive behaviour states of each LoRA finetuned model or a `dict` instance of these states; default is all `False`
+        :param lora_paths: a list of LoRA checkpoint files
+                           or a `dict` instance of these files
+        :param cond_heads: a list of conditioning network heads
+                           or a `dict` instance of these networks
+        :param adapter_weights: a list of weights of each LoRA finetuned model
+                                or a `dict` instance of these weights;
+                                default is equally weighted
+        :param semi_autoregressive_flags: a list of the semi-autoregressive behaviour states of
+                                          each LoRA finetuned model
+                                          or a `dict` instance of these states;
+                                          default is all `False`
         :type base_model_path: str | pathlib.Path
         :type lora_paths: list | dict
         :type cond_heads: list | dict
@@ -1203,13 +1212,16 @@ class EnsembleChemBFN(ChemBFN):
     def _map_to_dict(
         self, c: Union[List[Tensor], Dict[str, Tensor]]
     ) -> Dict[str, Tensor]:
-        assert (
-            isinstance(c, dict) is self._label_is_dict
-        ), f"`c` should be a {'`dict` instance' if self._label_is_dict else '`list` instance'} but got {type(c)} instand."
+        assert isinstance(c, dict) is self._label_is_dict, (
+            f"`c` should be a "
+            f"{'`dict` instance' if self._label_is_dict else '`list` instance'}"
+            f" but got {type(c)} instand."
+        )
         assert (nc := len(c)) == (nm := len(self.models)), (
             f"Number of conditions should match the number of LoRA models. "
             f"We have {nm} LoRA {'model' if nm in (0, 1) else 'models'} but "
-            f"{nc} {'condition' if nc in (0, 1) else 'conditions'} {'was' if nc in (0, 1) else 'were'} provided."
+            f"{nc} {'condition' if nc in (0, 1) else 'conditions'} "
+            f"{'was' if nc in (0, 1) else 'were'} provided."
         )
         out: Dict[str, Tensor] = {}
         if isinstance(c, list):
@@ -1246,7 +1258,7 @@ class EnsembleChemBFN(ChemBFN):
         :param sequence_size: max sequence length
         :param conditions: guidance conditions;  shape: (n_b, n_c) * n_h
         :param sample_step: number of sampling steps
-        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param guidance_strength: strength of conditional generation
         :param token_mask: token mask;           shape: (1, 1, n_vocab)
         :type batch_size: int
         :type sequence_size: int
@@ -1281,7 +1293,7 @@ class EnsembleChemBFN(ChemBFN):
         :param sequence_size: max sequence length
         :param conditions: conditioning vector;  shape: (n_b, n_c) * n_h
         :param sample_step: number of sampling steps
-        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param guidance_strength: strength of conditional generation
         :param token_mask: token mask;           shape: (1, 1, n_vocab)
         :param temperature: sampling temperature
         :type batch_size: int
@@ -1321,7 +1333,7 @@ class EnsembleChemBFN(ChemBFN):
         :param x: categorical indices of scaffold;  shape: (n_b, n_t)
         :param conditions: conditioning vector;     shape: (n_b, n_c) * n_h
         :param sample_step: number of sampling steps
-        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param guidance_strength: strength of conditional generation
         :param token_mask: token mask;              shape: (1, 1, n_vocab)
         :type x: torch.Tensor
         :type conditions: list | dict
@@ -1351,7 +1363,7 @@ class EnsembleChemBFN(ChemBFN):
         :param x: categorical indices of scaffold;  shape: (n_b, n_t)
         :param conditions: conditioning vector;     shape: (n_b, n_c) * n_h
         :param sample_step: number of sampling steps
-        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param guidance_strength: strength of conditional generation
         :param token_mask: token mask;              shape: (1, 1, n_vocab)
         :param temperature: sampling temperature
         :type x: torch.Tensor
@@ -1385,7 +1397,7 @@ class EnsembleChemBFN(ChemBFN):
         :param x: categorical indices of template;  shape: (n_b, n_t)
         :param conditions: conditioning vector;     shape: (n_b, n_c) * n_h
         :param sample_step: number of sampling steps
-        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param guidance_strength: strength of conditional generation
         :param token_mask: token mask assigning unwanted token(s) with `True`;
                                                     shape: (1, 1, n_vocab)
         :type x: torch.Tensor
@@ -1416,7 +1428,7 @@ class EnsembleChemBFN(ChemBFN):
         :param x: categorical indices of template;  shape: (n_b, n_t)
         :param conditions: conditioning vector;     shape: (n_b, n_c) * n_h
         :param sample_step: number of sampling steps
-        :param guidance_strength: strength of conditional generation. It is not used if y is null.
+        :param guidance_strength: strength of conditional generation
         :param token_mask: token mask;              shape: (1, 1, n_vocab)
         :param temperature: sampling temperature
         :type x: torch.Tensor

@@ -41,8 +41,8 @@ def _lora_state_dict(model: ChemBFN) -> Dict[str, Tensor]:
 
 
 def focal_loss(
-    input: Tensor,
-    target: Tensor,
+    inputs: Tensor,
+    targets: Tensor,
     alpha: Union[float, List[float], None] = None,
     gamma: int = 2,
     reduction: Literal["none", "mean", "sum"] = "mean",
@@ -52,37 +52,37 @@ def focal_loss(
 
     .. math:: $FL = -\alpha(1 - p_t)^{gamma}ln(p_t)$
 
-    :param input: predicted logits;   shape: (n_b, n_class)
-    :param target: labelled classes;  shape: (n_class)
+    :param inputs: predicted logits;   shape: (n_b, n_class)
+    :param targets: labelled classes;  shape: (n_class)
     :param alpha: class balancing factor
     :param gamma: focusing parameter
     :param reduction: `'none'`, `'mean'` or `'sum'`; default is `'mean'`
-    :type input: torch.Tensor
-    :type target: torch.Tensor
+    :type inputs: torch.Tensor
+    :type targets: torch.Tensor
     :type alpha: float | list | None
     :type gamma: int
     :type reduction: str
     :return: focal loss value
     :rtype: torch.Tensor
     """
-    assert input.dim() == 2, "The expected shape is (n_batch, n_class)."
-    assert target.dim() == 1, "The expected shape is (n_class,)."
-    assert input.shape[0] == target.shape[0], "Shape mismatched."
-    K = input.shape[-1]
+    assert inputs.dim() == 2, "The expected shape is (n_batch, n_class)."
+    assert targets.dim() == 1, "The expected shape is (n_class,)."
+    assert inputs.shape[0] == targets.shape[0], "Shape mismatched."
+    num_class = inputs.shape[-1]
     if isinstance(alpha, (list, tuple)):
-        assert K == (
+        assert num_class == (
             k := len(alpha)
-        ), f"We have {K} classes but you only provided {k} balancing factors."
-        alpha = input.new_tensor(alpha)
+        ), f"We have {num_class} classes but you provided {k} balancing factors."
+        alpha = inputs.new_tensor(alpha)
     elif isinstance(alpha, float):
-        assert K == 2, "A float alpha is only accecpted for binary cases."
-        alpha = input.new_tensor([1 - alpha, alpha])
-    p = F.softmax(input, -1)
-    target_onehot = F.one_hot(target, K).float()
+        assert num_class == 2, "A float alpha is only accecpted for binary cases."
+        alpha = inputs.new_tensor([1 - alpha, alpha])
+    p = F.softmax(inputs, -1)
+    target_onehot = F.one_hot(targets, num_class).float()
     p_t = p * target_onehot + (1 - p) * (1 - target_onehot)
     loss = -(1 - p_t).pow(gamma) * (p_t + 1e-8).log()
     if torch.is_tensor(alpha):
-        alpha_t = alpha.gather(0, target)
+        alpha_t = alpha.gather(0, targets)
         loss = alpha_t.unsqueeze(1) * loss
     if reduction == "sum":
         return loss.sum()
@@ -105,15 +105,15 @@ class Model(LightningModule):
     ) -> None:
         """
         A `~lightning.LightningModule` wrapper of bayesian flow network for chemistry model.\n
-        This module is used in training stage only. 
+        This module is used in training stage only.
         By calling `Model(...).export_model(YOUR_WORK_DIR)` after training,
-        the model(s) will be saved to `YOUR_WORK_DIR/model.pt` 
+        the model(s) will be saved to `YOUR_WORK_DIR/model.pt`
         (if LoRA is enabled then `YOUR_WORK_DIR/lora.pt`) and (if exists) `YOUR_WORK_DIR/mlp.pt`.
 
         :param model: `~bayesianflow_for_chem.model.ChemBFN` instance.
         :param mlp: `~bayesianflow_for_chem.model.MLP` instance or `None`.
         :param scorer: `~bayesianflow_for_chem.scorer.Scorer` instance or `None`.
-        :param hparam: a `dict` instance of hyperparameters. 
+        :param hparam: a `dict` instance of hyperparameters.
                        See `bayesianflow_for_chem.train.DEFAULT_MODEL_HPARAM`.
         :type model: bayesianflow_for_chem.model.ChemBFN
         :type mlp: bayesianflow_for_chem.model.MLP | None
@@ -212,14 +212,14 @@ class Regressor(LightningModule):
     ) -> None:
         """
         A `~lightning.LightningModule` wrapper of ChemBFN regression or classification model.\n
-        This module is used in training stage only. 
+        This module is used in training stage only.
         By calling `Regressor(...).export_model(YOUR_WORK_DIR)` after training,
-        the models will be saved to `YOUR_WORK_DIR/model_ft.pt` 
+        the models will be saved to `YOUR_WORK_DIR/model_ft.pt`
         (or `YOUR_WORK_DIR/lora.pt` if LoRA is enabled) and `YOUR_WORK_DIR/readout.pt`.
 
         :param model: `~bayesianflow_for_chem.model.ChemBFN` instance.
         :param mlp: `~bayesianflow_for_chem.model.MLP` instance.
-        :param hparam: a `dict` instance of hyperparameters. 
+        :param hparam: a `dict` instance of hyperparameters.
                        See `bayesianflow_for_chem.train.DEFAULT_REGRESSOR_HPARAM`.
         :type model: bayesianflow_for_chem.model.ChemBFN
         :type mlp: bayesianflow_for_chem.model.MLP

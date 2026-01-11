@@ -225,10 +225,15 @@ class _PluginStaticValidator(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def _isinstance(obj: object, class_or_tuple: Any):
+def _isinstance(obj: object, class_or_tuple: Any) -> bool:
     try:
         return isinstance(obj, class_or_tuple)
     except TypeError as error:
+        if isinstance(class_or_tuple, tuple):
+            type_fit = False
+            for class_ in class_or_tuple:
+                type_fit |= _isinstance(obj, class_)
+            return type_fit
         origin_type = get_origin(class_or_tuple)
         args_type = get_args(class_or_tuple)
         origin_fit = isinstance(obj, origin_type)
@@ -276,6 +281,13 @@ class _ChemBFNConfig:
             "base_model": List[str],
         }
 
+    @property
+    def config(self) -> Dict[str, Union[int, float]]:
+        """
+        Return model hyperparameters.
+        """
+        return {k: v for k, v in self.__dict__.items() if k != "base_model"}
+
 
 class _MLPConfig:
     size: List[int] = None
@@ -289,11 +301,22 @@ class _MLPConfig:
         """
         return {"size": List[int], "class_input": bool, "base_model": str}
 
+    @property
+    def config(self) -> Dict[str, Union[bool, List[int]]]:
+        """
+        Return model hyperparameters.
+        """
+        return {k: v for k, v in self.__dict__.items() if k != "base_model"}
+
 
 _ModelConfigType = Dict[str, Dict[str, Union[str, int, float, bool, List[int]]]]
 
 
 class _ModelConfig:
+    # Q: For heaven's sake, why not use pydantic and save lifes?
+    #
+    # A: The version of pydantic we use may be conflict with that of Gradio.
+    #    And we do have another project using Gradio, alas.
     chembfn_config: Optional[_ChemBFNConfig] = None
     mlp_config: Optional[_MLPConfig] = None
 
@@ -684,7 +707,7 @@ def main_script(version: str) -> None:
         if runtime_config["train"]["enable_lora"]:
             if not model_config.chembfn_config.base_model:
                 rank_zero_info(
-                    f"\033[0;33mWarning\033[0;0m in {parser.model_config}: "
+                    f"{_CHECK_MESSAGE[2]} in {parser.model_config}: "
                     "You should load a pretrained model first."
                 )
                 flag_warning += 1
@@ -693,7 +716,7 @@ def main_script(version: str) -> None:
                 os.makedirs(runtime_config["train"]["checkpoint_save_path"])
         if runtime_config["train"]["objective_tag"] and model_config.mlp_config is None:
             rank_zero_info(
-                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: "
+                f"{_CHECK_MESSAGE[2]} in {parser.model_config}: "
                 f"You have specified objective tag in {parser.config} "
                 "but did not define a MLP to handle it."
             )
@@ -703,13 +726,13 @@ def main_script(version: str) -> None:
             and not runtime_config["train"]["objective_tag"]
         ):
             rank_zero_info(
-                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: MLP not used."
+                f"{_CHECK_MESSAGE[2]} in {parser.model_config}: MLP not used."
             )
             flag_warning += 1
     else:
         if not model_config.chembfn_config.base_model:
             rank_zero_info(
-                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: "
+                f"{_CHECK_MESSAGE[2]} in {parser.model_config}: "
                 "You should load a pretrained ChemBFN model."
             )
             flag_warning += 1
@@ -718,7 +741,7 @@ def main_script(version: str) -> None:
             and not model_config.mlp_config.base_model
         ):
             rank_zero_info(
-                f"\033[0;33mWarning\033[0;0m in {parser.model_config}: "
+                f"{_CHECK_MESSAGE[2]} in {parser.model_config}: "
                 "You should load a pretrained MLP."
             )
             flag_warning += 1
@@ -726,7 +749,7 @@ def main_script(version: str) -> None:
         if runtime_config["inference"]["guidance_objective"]:
             if model_config.mlp_config is None:
                 rank_zero_info(
-                    f"\033[0;33mWarning\033[0;0m in {parser.model_config}: "
+                    f"{_CHECK_MESSAGE[2]} in {parser.model_config}: "
                     "Oh no, you don't have a MLP."
                 )
                 flag_warning += 1
@@ -735,7 +758,8 @@ def main_script(version: str) -> None:
             rank_zero_info("Configuration check failed!")
         elif flag_warning != 0:
             rank_zero_info(
-                "Your job will probably run, but it may not follow your expectations."
+                "Your job will probably run, "
+                "but it may not follow your expectations."
             )
         else:
             rank_zero_info("Configuration check passed.")
@@ -782,26 +806,14 @@ def main_script(version: str) -> None:
     if base_model:
         bfn = ChemBFN.from_checkpoint(*model_config.chembfn_config.base_model)
     else:
-        bfn = ChemBFN(
-            **{
-                k: v
-                for k, v in model_config.chembfn_config.__dict__.items()
-                if k != "base_model"
-            }
-        )
+        bfn = ChemBFN(**model_config.chembfn_config.config)
     # ####### build MLP #######
     if model_config.mlp_config is not None:
         base_model = model_config.mlp_config.base_model
         if base_model:
             mlp = MLP.from_checkpoint(base_model)
         else:
-            mlp = MLP(
-                **{
-                    k: v
-                    for k, v in model_config.mlp_config.__dict__.items()
-                    if k != "base_model"
-                }
-            )
+            mlp = MLP(**model_config.mlp_config.config)
     else:
         mlp = None
     # ------- train -------
@@ -846,7 +858,7 @@ def main_script(version: str) -> None:
             True if (_shuffle := plugins["shuffle"]) is None else _shuffle,
             num_workers=4 if (nw := plugins["num_workers"]) is None else nw,
             collate_fn=collate if (cfn := plugins["collate_fn"]) is None else cfn,
-            persistent_workers=True if (nw is None or nw > 0) else False,
+            persistent_workers=bool(nw is None or nw > 0),
         )
         # ####### build trainer #######
         logger_name = runtime_config["train"]["logger_name"].lower()
@@ -890,9 +902,6 @@ def main_script(version: str) -> None:
         model = Model(bfn, mlp, scorer)
         model.model.semi_autoregressive = runtime_config["train"]["semi_autoregressive"]
         # ####### start training #######
-        import gc
-
-        gc.collect()
         os.environ["PYTORCH_ALLOC_CONF"] = "max_split_size_mb:128"
         if not runtime_config["train"]["dynamic_padding"]:
             os.environ["MAX_PADDING_LENGTH"] = f"{lmax}"  # important!
