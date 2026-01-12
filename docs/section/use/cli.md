@@ -157,9 +157,17 @@ class CustomData(CSVData):
         return self.mapping(...)
 ```
 
-In order to tell the program which customised values should be used, it is necessary to encapsulate them in `__all__` variable, _e.g._, `__all__ = ["collate_fn", "num_workers", "shuffle", "max_sequence_length", "CustomData"]`.
+In order to tell the program which customised values should be used, it is necessary to encapsulate them in the `__all__` variable, _e.g._, `__all__ = ["collate_fn", "num_workers", "shuffle", "max_sequence_length", "CustomData"]`.
 
-Note that (1) if you define a dataset class not inherited from `CSVData`, make sure you include the `map(...)` method. If `map(...)` method is unnecessary for your `CustomData`, set it to `lambda x: None`; (2) if `max_sequence_length` is not provided, the program will always calculate this value even when `dynamic_padding = true` is set in `[YOUR_CONFIG.toml]`. To bypass this behaviour, set `max_sequence_length = "n.a."`; (3) for safety reasons, we banned the use of `open` inside the plugin script. Please use methods provided by `pandas`, `scipy`, _etc_. A detailed example can be found [here](https://github.com/Augus1999/bayesian-flow-network-for-chemistry/blob/main/example/cli/plugin.py).
+Note that
+
+(1) if you define a dataset class not inherited from `CSVData`, make sure you include the `map(...)` method. If `map(...)` method is unnecessary for your `CustomData`, set it to a function equivalent to `lambda x: None`;
+
+(2) if `max_sequence_length` is not provided, the program will always calculate this value even when `dynamic_padding = true` is set in `[YOUR_CONFIG.toml]`. To bypass this behaviour, set `max_sequence_length = "n.a."`;
+
+(3) for safety reasons, we banned the use of `open(...)` inside the plugin script. Please use methods provided by `pandas`, `scipy`, _etc_. However, there is NO isolation sandbox used, so do not paste any code you do not understand into the script! If you are planning to deploy this program into a service, do remember to restrict the network and file system premissions for the users.
+
+A detailed example can be found [here](https://github.com/Augus1999/bayesian-flow-network-for-chemistry/blob/main/example/cli/plugin.py).
 
 Tips:
 If you have a very large dataset, employing shuffle inside mini-batches rather than global shuffle will significantly accelerate the training process.
