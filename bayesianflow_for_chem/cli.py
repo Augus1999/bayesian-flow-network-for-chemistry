@@ -1297,7 +1297,7 @@ def main_script(version: str) -> None:
             mols.extend(s)
             if runtime_config.inference_config.exclude_duplicate:
                 mols = list(set(mols))
-            if r := len(mols) / runtime_config.inference_config.sample_size < 1:
+            if (r := len(mols) / runtime_config.inference_config.sample_size) < 1:
                 rank_zero_info(f"{100 * r:.1f} % finished")
         # ####### save results #######
         with open(
