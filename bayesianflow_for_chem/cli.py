@@ -627,13 +627,13 @@ class _RuntimeConfig:
                     )
                     self._flag_critical += 1
             elif key == "sequence_length":
-                if not self.run_train and isinstance(i, str):
+                if not self.run_train and not isinstance(i, int):
                     self._msg.append(
                         f"{_CHECK_MESSAGE[1]} in {self._fn}: "
                         "You must set an integer for sequence_length."
                     )
                     self._flag_critical += 1
-                elif i != "match dataset":
+                elif isinstance(i, str) and i != "match dataset":
                     self._msg.append(
                         f"{_CHECK_MESSAGE[1]} in {self._fn}: You must specify sequence_length."
                     )
@@ -985,9 +985,11 @@ def main_script(version: str) -> None:
                     "You should load a pretrained model first."
                 )
                 flag_warning += 1
-        if not os.path.exists(runtime_config.train_config.checkpoint_save_path):
+        if (
+            ckp := runtime_config.train_config.checkpoint_save_path
+        ) is not None and not os.path.exists(ckp):
             if not parser.dryrun:  # only create it in real tasks
-                os.makedirs(runtime_config.train_config.checkpoint_save_path)
+                os.makedirs(ckp)
         if runtime_config.train_config.objective_tag and not model_config.has_mlp:
             rank_zero_info(
                 f"{_CHECK_MESSAGE[2]} in {parser.model_config}: "
