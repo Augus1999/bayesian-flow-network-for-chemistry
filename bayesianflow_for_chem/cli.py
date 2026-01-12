@@ -230,29 +230,24 @@ def _isinstance(obj: object, class_or_tuple: Any) -> bool:
         return isinstance(obj, class_or_tuple)
     except TypeError as error:
         if isinstance(class_or_tuple, tuple):
-            type_fit = False
-            for class_ in class_or_tuple:
-                type_fit |= _isinstance(obj, class_)
-            return type_fit
+            return any(_isinstance(obj, class_) for class_ in class_or_tuple)
         origin_type = get_origin(class_or_tuple)
+        if origin_type is None:
+            raise NotImplementedError(
+                f"We haven't implemented the type checking "
+                f"for {repr(class_or_tuple)} yet."
+            ) from error
         args_type = get_args(class_or_tuple)
-        origin_fit = isinstance(obj, origin_type)
-        if origin_fit:
+        if isinstance(obj, origin_type):
             # We only need to check `typing.List` and `typing.Tuple`.
             if origin_type == list:
                 if len(args_type) > 1:
                     return False
-                args_fit = True
-                for i in obj:
-                    args_fit &= isinstance(i, args_type[0])
-                return args_fit
+                return all(_isinstance(i, args_type[0]) for i in obj)
             if origin_type == tuple:
                 if len(args_type) != len(obj):
                     return False
-                args_fit = True
-                for i, j in enumerate(obj):
-                    args_fit &= isinstance(j, args_type[i])
-                return args_fit
+                return all(_isinstance(i, args_type[k]) for k, i in enumerate(obj))
             raise NotImplementedError(
                 f"We haven't implemented the type checking "
                 f"for {repr(class_or_tuple)} yet."
@@ -261,8 +256,12 @@ def _isinstance(obj: object, class_or_tuple: Any) -> bool:
 
 
 def _load_config(
-    config_dict: Dict[str, Any], config_class: Any, banned_attr: List[str]
+    config_dict: Dict[str, Any],
+    config_class: Any,
+    banned_attr: Optional[List[str]] = None,
 ) -> None:  # save load
+    if banned_attr is None:
+        banned_attr = ["config", "annotations"]
     for k, v in config_dict.items():
         if hasattr(config_class, k) and (k not in banned_attr) and ("__" not in k):
             setattr(config_class, k, v)
@@ -338,7 +337,7 @@ class _ModelConfig:
         self._flag_critical = 0
         self._flag_warning = 0
 
-    def _check_type(self, obj: Union[_ChemBFNConfig, _MLPConfig]) -> None:
+    def _check_type_and_value(self, obj: Union[_ChemBFNConfig, _MLPConfig]) -> None:
         for key, type_ in obj.annotations.items():
             if not _isinstance(i := getattr(obj, key), type_):
                 if i is not None:
@@ -394,9 +393,7 @@ class _ModelConfig:
             self._flag_critical += 1
         else:
             self.chembfn_config = _ChemBFNConfig()
-            _load_config(
-                self._config["ChemBFN"], self.chembfn_config, ["config", "annotations"]
-            )
+            _load_config(self._config["ChemBFN"], self.chembfn_config)
         if "MLP" in self._config:
             if not isinstance(self._config["MLP"], dict):
                 self._msg.append(
@@ -405,28 +402,24 @@ class _ModelConfig:
                 self._flag_critical += 1
             else:
                 self.mlp_config = _MLPConfig()
-                _load_config(
-                    self._config["MLP"], self.mlp_config, ["config", "annotations"]
-                )
+                _load_config(self._config["MLP"], self.mlp_config)
 
     def check(self) -> None:
         """
         Check the configurations.
         """
-        if a := self.chembfn_config is not None:
-            self._check_type(self.chembfn_config)
+        if self.has_bfn:
+            self._check_type_and_value(self.chembfn_config)
             self._check_missing_value(self.chembfn_config)
-        if b := self.mlp_config is not None:
-            self._check_type(self.mlp_config)
+        if self.has_mlp:
+            self._check_type_and_value(self.mlp_config)
             self._check_missing_value(self.mlp_config)
-        if a and b:
-            if (s1 := self.chembfn_config.channel) is not None and (
-                s2 := self.mlp_config.size
-            ) is not None:
-                if s1 != (s2 := s2[-1]):
+        if self.has_bfn and self.has_mlp:
+            if (s1 := self.chembfn_config.channel) and (s2 := self.mlp_config.size):
+                if isinstance(s1, int) and isinstance(s2, list) and s1 != s2[-1]:
                     self._msg.append(
                         f"{_CHECK_MESSAGE[1]} in {self._fn}: "
-                        f"MLP hidden size {s2} should match ChemBFN hidden size {s1}."
+                        f"MLP output size {s2[-1]} should match ChemBFN hidden size {s1}."
                     )
                     self._flag_critical += 1
 
@@ -445,9 +438,16 @@ class _ModelConfig:
         Export parsed configurations back to dict.
         """
         config_dict = {"ChemBFN": self.chembfn_config.__dict__}
-        if self.mlp_config is not None:
+        if self.has_mlp:
             config_dict["MLP"] = self.mlp_config.__dict__
         return config_dict
+
+    @property
+    def has_bfn(self) -> bool:
+        """
+        Check whether a ChemBFN model is defined.
+        """
+        return self.chembfn_config is not None
 
     @property
     def has_mlp(self) -> bool:
@@ -455,6 +455,335 @@ class _ModelConfig:
         Check whether a MLP is defined.
         """
         return self.mlp_config is not None
+
+
+class _TokeniserConfig:
+    name: str = None
+    vocab: str = "default"
+
+    @property
+    def annotations(self) -> Dict[str, Any]:
+        """
+        Return annotations.
+        """
+        return {"name": str, "vocab": str}
+
+    @property
+    def config(self) -> Dict[str, str]:
+        """
+        Return configurations.
+        """
+        return self.__dict__
+
+
+class _TrainConfig:
+    epoch: int = None
+    batch_size: int = None
+    semi_autoregressive: bool = False
+    enable_lora: bool = False
+    dynamic_padding: bool = False
+    restart: str = ""
+    dataset: str = None
+    molecule_tag: str = None
+    objective_tag: List[str] = None
+    enforce_validity: bool = True
+    logger_name: str = "csv"
+    logger_path: str = None
+    checkpoint_save_path: str = None
+    train_strategy: str = "auto"
+    accumulate_grad_batches: int = 1
+    enable_progress_bar: bool = False
+    plugin_script: str = ""  # added in v2.2.0
+
+    @property
+    def annotations(self) -> Dict[str, Any]:
+        """
+        Return annotations.
+        """
+        return {
+            "epoch": int,
+            "batch_size": int,
+            "semi_autoregressive": bool,
+            "enable_lora": bool,
+            "dynamic_padding": bool,
+            "restart": str,
+            "dataset": str,
+            "molecule_tag": str,
+            "objective_tag": List[str],
+            "enforce_validity": bool,
+            "logger_name": str,
+            "logger_path": str,
+            "checkpoint_save_path": str,
+            "train_strategy": str,
+            "accumulate_grad_batches": int,
+            "enable_progress_bar": bool,
+            "plugin_script": str,  # added in v2.2.0
+        }
+
+    @property
+    def config(self) -> _TrIrConfigType:
+        """
+        Return configurations.
+        """
+        return self.__dict__
+
+
+class _InferenceConfig:
+    mini_batch_size: int = None
+    sequence_length: Union[str, int] = None
+    sample_size: int = None
+    sample_step: int = None
+    sample_method: str = None
+    semi_autoregressive: bool = False
+    lora_scaling: float = 1.0  # added in 2.1.0
+    guidance_objective: List[float] = []
+    guidance_objective_strength: float = 4.0
+    guidance_scaffold: str = ""
+    sample_template: str = ""  # added in v2.1.0
+    unwanted_token: List[str] = []
+    exclude_invalid: bool = True
+    exclude_duplicate: bool = True
+    result_file: str = None
+
+    @property
+    def annotations(self) -> Dict[str, Any]:
+        """
+        Return annotations.
+        """
+        return {
+            "mini_batch_size": int,
+            "sequence_length": Union[str, int],
+            "sample_size": int,
+            "sample_step": int,
+            "sample_method": str,
+            "semi_autoregressive": bool,
+            "lora_scaling": float,  # added in v2.1.0
+            "guidance_objective": List[float],
+            "guidance_objective_strength": float,
+            "guidance_scaffold": str,
+            "sample_template": str,  # added in v2.1.0
+            "unwanted_token": List[str],
+            "exclude_invalid": bool,
+            "exclude_duplicate": bool,
+            "result_file": str,
+        }
+
+    @property
+    def config(self) -> _TrIrConfigType:
+        """
+        Return configurations.
+        """
+        return self.__dict__
+
+
+class _RuntimeConfig:
+    device: str = "auto"
+    run_name: str = None
+    tokeniser_config: Optional[_TokeniserConfig] = None
+    train_config: Optional[_TrainConfig] = None
+    inference_config: Optional[_InferenceConfig] = None
+
+    def __init__(self, config: Dict[str, Any], fn: str) -> None:
+        self._config = config
+        self._fn = fn
+        self._msg = []
+        self._flag_critical = 0
+        self._flag_warning = 0
+
+    def _check_type_and_value(
+        self, obj: Union[_TokeniserConfig, _TrainConfig, _InferenceConfig]
+    ) -> None:
+        for key, type_ in obj.annotations.items():
+            if not _isinstance(i := getattr(obj, key), type_):
+                if i is not None:
+                    self._msg.append(
+                        f"{_CHECK_MESSAGE[1]} in {self._fn}: "
+                        f"Expected type for '{key}' is {repr(type_)}"
+                        f" but got {type(i)} instead."
+                    )
+                    self._flag_critical += 1
+            elif key == "name":
+                if not i.lower() in "smiles selfies safe fasta".split():
+                    self._msg.append(
+                        f"{_CHECK_MESSAGE[1]} in {self._fn}: Unknown tokensier name: {i}."
+                    )
+                    self._flag_critical += 1
+                if i.lower() == "selfies":
+                    if isinstance(vocab := obj.vocab, str):
+                        if vocab.lower() == "default":
+                            self._msg.append(
+                                f"{_CHECK_MESSAGE[1]} in {self._fn}: "
+                                "You should specify a vocabulary file."
+                            )
+                            self._flag_critical += 1
+                        else:
+                            self._flag_critical += _check_path(
+                                vocab, self._fn, "Vocabulary file %s does not exist."
+                            )
+            elif key == "logger_name":
+                if not i.lower() in "csv tensorboard wandb".split():
+                    self._msg.append(
+                        f"{_CHECK_MESSAGE[1]} in {self._fn}: Unknown logger: {i}."
+                    )
+                    self._flag_critical += 1
+            elif key == "sequence_length":
+                if not self.run_train and isinstance(i, str):
+                    self._msg.append(
+                        f"{_CHECK_MESSAGE[1]} in {self._fn}: "
+                        "You must set an integer for sequence_length."
+                    )
+                    self._flag_critical += 1
+                elif i != "match dataset":
+                    self._msg.append(
+                        f"{_CHECK_MESSAGE[1]} in {self._fn}: You must specify sequence_length."
+                    )
+                    self._flag_critical += 1
+            elif key in ("dataset", "restart", "plugin_script"):
+                if i or key == "dataset":
+                    self._flag_critical += _check_path(
+                        i, self._fn, f"{key.capitalize()} file %s does not exist."
+                    )
+            elif key == "result_file":
+                self._flag_warning += _check_path(
+                    Path(i).parent,
+                    self._fn,
+                    "Directory %s to save the result does not exist.",
+                    level=2,
+                )
+
+    def _check_missing_value(
+        self, obj: Union[_TokeniserConfig, _TrainConfig, _InferenceConfig]
+    ) -> None:
+        for key in dir(obj):
+            if "__" not in key:
+                value = getattr(obj, key)
+                if value is None:
+                    self._msg.append(
+                        f"{_CHECK_MESSAGE[1]} in {self._fn}: Missing key '{key}'."
+                    )
+                    self._flag_critical += 1
+
+    def load(self) -> None:
+        """
+        Load configurations from dict.
+        """
+        if "device" in self._config:
+            self.device = self._config["device"]
+        if not "run_name" in self._config:
+            self._msg.append(
+                f"{_CHECK_MESSAGE[1]} in {self._fn}: You need to specifiy 'run_name'."
+            )
+            self._flag_critical += 1
+        else:
+            self.run_name = self._config["run_name"]
+        if (not "tokeniser" in self._config) or (
+            not isinstance(self._config["tokeniser"], dict)
+        ):
+            self._msg.append(
+                f"{_CHECK_MESSAGE[1]} in {self._fn}: You must define a tokeniser."
+            )
+            self._flag_critical += 1
+        else:
+            self.tokeniser_config = _TokeniserConfig()
+            _load_config(self._config["tokeniser"], self.tokeniser_config)
+        if "train" in self._config:
+            if not isinstance(self._config["train"], dict):
+                self._msg.append(
+                    f"{_CHECK_MESSAGE[1]} in {self._fn}: You didn't define a training process."
+                )
+                self._flag_critical += 1
+            else:
+                self.train_config = _TrainConfig()
+                _load_config(self._config["train"], self.train_config)
+        if "inference" in self._config:
+            if not isinstance(self._config["inference"], dict):
+                self._msg.append(
+                    f"{_CHECK_MESSAGE[1]} in {self._fn}: You didn't define an inference process."
+                )
+                self._flag_critical += 1
+            else:
+                self.inference_config = _InferenceConfig()
+                _load_config(self._config["inference"], self.inference_config)
+
+    def check(self) -> None:
+        """
+        Check the configurations.
+        """
+        if not isinstance(self.device, str):
+            self._msg.append(
+                f"{_CHECK_MESSAGE[1]} in {self._fn}: "
+                f"Expected type for 'device' is str, "
+                f"got {type(self.device)} instead."
+            )
+            self._flag_critical += 1
+        if self.run_name is None:
+            self._msg.append(
+                f"{_CHECK_MESSAGE[1]} in {self._fn}: Missing key 'run_name'."
+            )
+            self._flag_critical += 1
+        elif not isinstance(self.run_name, str):
+            self._msg.append(
+                f"{_CHECK_MESSAGE[1]} in {self._fn}: "
+                f"Expected type for 'run_name' is str, "
+                f"got {type(self.device)} instead."
+            )
+            self._flag_critical += 1
+        if self.tokeniser_config is not None:
+            self._check_type_and_value(self.tokeniser_config)
+            self._check_missing_value(self.tokeniser_config)
+        if self.run_train:
+            self._check_type_and_value(self.train_config)
+            self._check_missing_value(self.train_config)
+        if self.run_inference:
+            self._check_type_and_value(self.inference_config)
+            self._check_missing_value(self.inference_config)
+            if (
+                self.inference_config.guidance_scaffold != ""
+                and self.inference_config.sample_template != ""
+            ):
+                self._msg.append(
+                    f"{_CHECK_MESSAGE[2]} in {self._fn}: Inpaint task or mol2mol task?"
+                )
+                self._flag_warning += 1
+
+    def parse(self) -> Tuple[int, int]:
+        """
+        Parse the configuration dict.
+        """
+        self.load()
+        self.check()
+        for msg in self._msg:
+            rank_zero_info(msg)
+        return self._flag_critical, self._flag_warning
+
+    def to_dict(self) -> _RuntimeConfigType:
+        """
+        Export parsed configurations back to dict.
+        """
+        config_dict = {
+            "device": self.device,
+            "run_name": self.run_name,
+            "tokeniser": self.tokeniser_config.config,
+        }
+        if self.run_train:
+            config_dict["train"] = self.train_config.config
+        if self.run_inference:
+            config_dict["inference"] = self.inference_config.config
+        return config_dict
+
+    @property
+    def run_train(self) -> bool:
+        """
+        Check whether training is required.
+        """
+        return self.train_config is not None
+
+    @property
+    def run_inference(self) -> bool:
+        """
+        Check whether inferencing is required.
+        """
+        return self.inference_config is not None
 
 
 def _load_plugin(
@@ -572,12 +901,11 @@ def load_model_config(
 
     :param config_file: configuration file name <file>
     :type config_file: str | pathlib.Path
-    :return: a `dict` containing model hyperparameters \n
+    :return: a `~bayesianflow_for_chem.cli._ModelConfig` instance \n
              critical flag number: a value > 0 means critical error happened \n
              warning flag number: a value > 0 means minor error found
     :rtype: tuple
     """
-    flag_critical, flag_warning = 0, 0
     with open(config_file, "rb") as f:
         _model_config = tomllib.load(f)
     model_config = _ModelConfig(_model_config, config_file)
@@ -587,92 +915,21 @@ def load_model_config(
 
 def load_runtime_config(
     config_file: Union[str, Path],
-) -> Tuple[Dict[str, Union[str, Dict[str, Any]]], int, int]:
+) -> Tuple[_RuntimeConfig, int, int]:
     """
     Load the runtime configurations from a .toml file and check the settings.
 
     :param config_file: configuration file name <file>
     :type config_file: str | pathlib.Path
-    :return: a `dict` containing job settings \n
+    :return: a `~bayesianflow_for_chem.cli._RuntimeConfig` instance \n
              critical flag number: a value > 0 means critical error happened \n
              warning flag number: a value > 0 means minor error found
     :rtype: tuple
     """
-    flag_critical, flag_warning = 0, 0
     with open(config_file, "rb") as f:
-        config = tomllib.load(f)
-    tokeniser_name = config["tokeniser"]["name"].lower()
-    if not tokeniser_name in "smiles selfies safe fasta".split():
-        rank_zero_info(
-            f"\033[0;31mCritical\033[0;0m in {config_file}: Unknown tokensier name: {tokeniser_name}."
-        )
-        flag_critical += 1
-    if tokeniser_name == "selfies":
-        vocab: str = config["tokeniser"]["vocab"]
-        if vocab.lower() == "default":
-            rank_zero_info(
-                f"\033[0;31mCritical\033[0;0m in {config_file}: You should specify a vocabulary file."
-            )
-            flag_critical += 1
-        else:
-            flag_critical += _check_path(
-                vocab, config_file, "Vocabulary file %s does not exist."
-            )
-    if "train" in config:
-        dataset_file = config["train"]["dataset"]
-        flag_critical += _check_path(
-            dataset_file, config_file, "Dataset file %s does not exist."
-        )
-        logger_name = config["train"]["logger_name"].lower()
-        if not logger_name in "csv tensorboard wandb".split():
-            rank_zero_info(
-                f"\033[0;31mCritical\033[0;0m in {config_file}: Unknown logger: {logger_name}."
-            )
-            flag_critical += 1
-        if ckpt_file := config["train"]["restart"]:
-            flag_critical += _check_path(
-                ckpt_file, config_file, "Restart checkpoint file %s does not exist."
-            )
-        # ↓ added in v2.2.0; need to be compatible with old versions.
-        plugin_script: str = config["train"].get("plugin_script", "")
-        if plugin_script:
-            flag_critical += _check_path(
-                plugin_script, config_file, "Plugin script %s does not exist."
-            )
-    if "inference" in config:
-        sequence_length = config["inference"]["sequence_length"]
-        if not "train" in config:
-            if not isinstance(sequence_length, int):
-                rank_zero_info(
-                    f"\033[0;31mCritical\033[0;0m in {config_file}: You must set an integer for sequence_length."
-                )
-                flag_critical += 1
-        if isinstance(sequence_length, str) and sequence_length != "match dataset":
-            rank_zero_info(
-                f"\033[0;31mCritical\033[0;0m in {config_file}: What do you mean by 'sequence_length = {sequence_length}'?"
-            )
-            flag_critical += 1
-        if config["inference"]["guidance_objective"]:
-            if not "guidance_objective_strength" in config["inference"]:
-                rank_zero_info(
-                    f"\033[0;31mCritical\033[0;0m in {config_file}: You need to add guidance_objective_strength."
-                )
-                flag_critical += 1
-        result_dir = Path(config["inference"]["result_file"]).parent
-        flag_warning += _check_path(
-            result_dir,
-            config_file,
-            "Directory %s to save the result does not exist.",
-            level=2,
-        )
-        if (
-            config["inference"]["guidance_scaffold"] != ""
-            and config["inference"]["sample_template"] != ""
-        ):
-            rank_zero_info(
-                f"\033[0;33mWarning\033[0;0m in {config_file}: Inpaint task or mol2mol task?"
-            )
-            flag_warning += 1
+        _config = tomllib.load(f)
+    config = _RuntimeConfig(_config, config_file)
+    flag_critical, flag_warning = config.parse()
     return config, flag_critical, flag_warning
 
 
@@ -719,31 +976,32 @@ def main_script(version: str) -> None:
     runtime_config, flag_c_runtime, flag_w_runtime = load_runtime_config(parser.config)
     flag_critical = flag_c_model + flag_c_runtime
     flag_warning = flag_w_model + flag_w_runtime
-    if "train" in runtime_config:
-        if runtime_config["train"]["enable_lora"]:
+    # ------- cross checking configurations -------
+    if runtime_config.run_train:
+        if runtime_config.train_config.enable_lora and model_config.has_bfn:
             if not model_config.chembfn_config.base_model:
                 rank_zero_info(
                     f"{_CHECK_MESSAGE[2]} in {parser.model_config}: "
                     "You should load a pretrained model first."
                 )
                 flag_warning += 1
-        if not os.path.exists(runtime_config["train"]["checkpoint_save_path"]):
+        if not os.path.exists(runtime_config.train_config.checkpoint_save_path):
             if not parser.dryrun:  # only create it in real tasks
-                os.makedirs(runtime_config["train"]["checkpoint_save_path"])
-        if runtime_config["train"]["objective_tag"] and not model_config.has_mlp:
+                os.makedirs(runtime_config.train_config.checkpoint_save_path)
+        if runtime_config.train_config.objective_tag and not model_config.has_mlp:
             rank_zero_info(
                 f"{_CHECK_MESSAGE[2]} in {parser.model_config}: "
                 f"You have specified objective tag in {parser.config} "
                 "but did not define a MLP to handle it."
             )
             flag_warning += 1
-        if model_config.has_mlp and not runtime_config["train"]["objective_tag"]:
+        if model_config.has_mlp and not runtime_config.train_config.objective_tag:
             rank_zero_info(
                 f"{_CHECK_MESSAGE[2]} in {parser.model_config}: MLP not used."
             )
             flag_warning += 1
     else:
-        if not model_config.chembfn_config.base_model:
+        if model_config.has_bfn and not model_config.chembfn_config.base_model:
             rank_zero_info(
                 f"{_CHECK_MESSAGE[2]} in {parser.model_config}: "
                 "You should load a pretrained ChemBFN model."
@@ -755,8 +1013,8 @@ def main_script(version: str) -> None:
                 "You should load a pretrained MLP."
             )
             flag_warning += 1
-    if "inference" in runtime_config:
-        if runtime_config["inference"]["guidance_objective"]:
+    if runtime_config.run_inference:
+        if runtime_config.inference_config.guidance_objective:
             if not model_config.has_mlp:
                 rank_zero_info(
                     f"{_CHECK_MESSAGE[2]} in {parser.model_config}: "
@@ -776,13 +1034,14 @@ def main_script(version: str) -> None:
         return
     if flag_critical != 0:
         raise RuntimeError(_ERROR_MESSAGE)
+    # ------- main process start here -------
     rank_zero_info(_HEAD_MESSAGE.format(version))
     time_stamp = _save_job_info(
-        runtime_config, model_config.to_dict(), Path(parser.config).parent
+        runtime_config.to_dict(), model_config.to_dict(), Path(parser.config).parent
     )
     # ####### build tokeniser #######
-    tokeniser_config: str = runtime_config["tokeniser"]
-    tokeniser_name = tokeniser_config["name"].lower()
+    tokeniser_config = runtime_config.tokeniser_config
+    tokeniser_name = tokeniser_config.name.lower()
     if tokeniser_name in ("smiles", "safe"):
         num_vocab = VOCAB_COUNT
         vocab_keys = VOCAB_KEYS
@@ -792,7 +1051,7 @@ def main_script(version: str) -> None:
         vocab_keys = FASTA_VOCAB_KEYS
         tokeniser = fasta2token
     if tokeniser_name == "selfies":
-        vocab_data = load_vocab(tokeniser_config["vocab"])
+        vocab_data = load_vocab(tokeniser_config.vocab)
         num_vocab = vocab_data["vocab_count"]
         vocab_dict = vocab_data["vocab_dict"]
         vocab_keys = vocab_data["vocab_keys"]
@@ -827,7 +1086,7 @@ def main_script(version: str) -> None:
     else:
         mlp = None
     # ------- train -------
-    if "train" in runtime_config:
+    if runtime_config.run_train:
         import lightning as L
         from torch.utils.data import DataLoader
         from lightning.pytorch import loggers
@@ -835,12 +1094,12 @@ def main_script(version: str) -> None:
         from bayesianflow_for_chem.train import Model
 
         # ####### get plugins #######
-        plugin_file = runtime_config["train"].get("plugin_script", "")
+        plugin_file = runtime_config.train_config.plugin_script
         plugins = _load_plugin(plugin_file)
         # ####### build scorer #######
         if (
             tokeniser_name in ("smiles", "safe")
-            and runtime_config["train"]["enforce_validity"]
+            and runtime_config.train_config.enforce_validity
         ):
             scorer = Scorer(
                 [smiles_valid], [lambda x: float(x == 1)], vocab_keys, name="invalid"
@@ -848,9 +1107,9 @@ def main_script(version: str) -> None:
         else:
             scorer = None
         # ####### build data #######
-        mol_tag = runtime_config["train"]["molecule_tag"]
-        obj_tag = runtime_config["train"]["objective_tag"]
-        dataset_file = runtime_config["train"]["dataset"]
+        mol_tag = runtime_config.train_config.molecule_tag
+        obj_tag = runtime_config.train_config.objective_tag
+        dataset_file = runtime_config.train_config.dataset
         if plugins["CustomData"] is not None:
             dataset = plugins["CustomData"](dataset_file)
         else:
@@ -864,118 +1123,123 @@ def main_script(version: str) -> None:
             lmax = max(i["token"].shape[-1] for i in dataset)
         dataloader = DataLoader(
             dataset,
-            runtime_config["train"]["batch_size"],
+            runtime_config.train_config.batch_size,
             True if (_shuffle := plugins["shuffle"]) is None else _shuffle,
             num_workers=4 if (nw := plugins["num_workers"]) is None else nw,
             collate_fn=collate if (cfn := plugins["collate_fn"]) is None else cfn,
             persistent_workers=bool(nw is None or nw > 0),
         )
         # ####### build trainer #######
-        logger_name = runtime_config["train"]["logger_name"].lower()
+        logger_name = runtime_config.train_config.logger_name.lower()
         checkpoint_callback = ModelCheckpoint(
-            dirpath=runtime_config["train"]["checkpoint_save_path"],
+            dirpath=runtime_config.train_config.checkpoint_save_path,
             every_n_train_steps=1000,
         )
         if logger_name == "wandb":
             logger = loggers.WandbLogger(
-                runtime_config["run_name"],
-                runtime_config["train"]["logger_path"],
+                runtime_config.run_name,
+                runtime_config.train_config.logger_path,
                 time_stamp,
                 project="ChemBFN",
                 job_type="train",
             )
-        if logger_name == "tensorboard":
+        elif logger_name == "tensorboard":
             logger = loggers.TensorBoardLogger(
-                runtime_config["train"]["logger_path"],
-                runtime_config["run_name"],
+                runtime_config.train_config.logger_path,
+                runtime_config.run_name,
                 time_stamp,
             )
-        if logger_name == "csv":
+        else:  # logger_name == "csv"
             logger = loggers.CSVLogger(
-                runtime_config["train"]["logger_path"],
-                runtime_config["run_name"],
+                runtime_config.train_config.logger_path,
+                runtime_config.run_name,
                 time_stamp,
             )
         trainer = L.Trainer(
-            max_epochs=runtime_config["train"]["epoch"],
+            max_epochs=runtime_config.train_config.epoch,
             log_every_n_steps=100,
             logger=logger,
-            strategy=runtime_config["train"]["train_strategy"],
-            accelerator=runtime_config["device"],
+            strategy=runtime_config.train_config.train_strategy,
+            accelerator=runtime_config.device,
             callbacks=[checkpoint_callback],
-            accumulate_grad_batches=runtime_config["train"]["accumulate_grad_batches"],
-            enable_progress_bar=runtime_config["train"]["enable_progress_bar"],
+            accumulate_grad_batches=runtime_config.train_config.accumulate_grad_batches,
+            enable_progress_bar=runtime_config.train_config.enable_progress_bar,
         )
         # ####### build model #######
-        if runtime_config["train"]["enable_lora"]:
+        if runtime_config.train_config.enable_lora:
             bfn.enable_lora(bfn.hparam["channel"] // 128)
         model = Model(bfn, mlp, scorer)
-        model.model.semi_autoregressive = runtime_config["train"]["semi_autoregressive"]
+        model.model.semi_autoregressive = (
+            runtime_config.train_config.semi_autoregressive
+        )
         # ####### start training #######
         os.environ["PYTORCH_ALLOC_CONF"] = "max_split_size_mb:128"
-        if not runtime_config["train"]["dynamic_padding"]:
+        if not runtime_config.train_config.dynamic_padding:
             os.environ["MAX_PADDING_LENGTH"] = f"{lmax}"  # important!
         torch.set_float32_matmul_precision("medium")
         trainer.fit(
             model,
             dataloader,
             ckpt_path=(
-                None if not (ckptdir := runtime_config["train"]["restart"]) else ckptdir
+                None
+                if not (ckptdir := runtime_config.train_config.restart)
+                else ckptdir
             ),
         )
-        model.export_model(Path(runtime_config["train"]["checkpoint_save_path"]))
+        model.export_model(Path(runtime_config.train_config.checkpoint_save_path))
         # ####### save config #######
         c = {
             "padding_index": 0,
             "start_index": 1,
             "end_index": 2,
             "padding_strategy": (
-                "dynamic" if runtime_config["train"]["dynamic_padding"] else "static"
+                "dynamic" if runtime_config.train_config.dynamic_padding else "static"
             ),
             "padding_length": lmax,
             "label": obj_tag,
-            "name": runtime_config["run_name"],
+            "name": runtime_config.run_name,
         }
         with open(
-            Path(runtime_config["train"]["checkpoint_save_path"]) / "config.json",
+            Path(runtime_config.train_config.checkpoint_save_path) / "config.json",
             "w",
             encoding="utf-8",
         ) as g:
             json.dump(c, g, indent=4)
     # ------- inference -------
-    if "inference" in runtime_config:
-        if "train" in runtime_config:
+    if runtime_config.run_inference:
+        if runtime_config.run_train:
             bfn = model.model
             mlp = model.mlp
-        # ↓ added in v2.1.0; need to be compatible with old versions
-        lora_scaling = runtime_config["inference"].get("lora_scaling", 1.0)
+        lora_scaling = runtime_config.inference_config.lora_scaling
         # ####### start inference #######
-        bfn.semi_autoregressive = runtime_config["inference"]["semi_autoregressive"]
-        _device = None if (__device := runtime_config["device"]) == "auto" else __device
-        batch_size = runtime_config["inference"]["mini_batch_size"]
-        sequence_length = runtime_config["inference"]["sequence_length"]
+        bfn.semi_autoregressive = runtime_config.inference_config.semi_autoregressive
+        _device = None if (__device := runtime_config.device) == "auto" else __device
+        batch_size = runtime_config.inference_config.mini_batch_size
+        sequence_length = runtime_config.inference_config.sequence_length
         if sequence_length == "match dataset":
             sequence_length = lmax
-        sample_step = runtime_config["inference"]["sample_step"]
-        sample_method = runtime_config["inference"]["sample_method"]
-        guidance_strength = runtime_config["inference"]["guidance_objective_strength"]
-        if unwanted_token := runtime_config["inference"]["unwanted_token"]:
+        sample_step = runtime_config.inference_config.sample_step
+        sample_method = runtime_config.inference_config.sample_method
+        guidance_strength = runtime_config.inference_config.guidance_objective_strength
+        if unwanted_token := runtime_config.inference_config.unwanted_token:
             allowed_token = [i for i in vocab_keys if i not in unwanted_token]
         else:
             allowed_token = "all"
-        if (y := runtime_config["inference"]["guidance_objective"]) and mlp is not None:
+        if (
+            y := runtime_config.inference_config.guidance_objective
+        ) and mlp is not None:
             y = torch.tensor(y, dtype=torch.float32)[None, :]
             y = mlp(y)
         else:
             y = None
-        if scaffold := runtime_config["inference"]["guidance_scaffold"]:
+        if scaffold := runtime_config.inference_config.guidance_scaffold:
             x = tokeniser(scaffold)
             x = torch.nn.functional.pad(
                 x[:-1], (0, sequence_length - x.shape[-1] + 1), value=0
             )
             x = x[None, :].repeat(batch_size, 1)
             # then sample template will be ignored.
-        elif template := runtime_config["inference"]["sample_template"]:
+        elif template := runtime_config.inference_config.sample_template:
             x = tokeniser(template)
             x = torch.nn.functional.pad(x, (0, sequence_length - x.shape[-1]), value=0)
             x = x[None, :].repeat(batch_size, 1)
@@ -984,7 +1248,7 @@ def main_script(version: str) -> None:
         if bfn.lora_enabled:
             adjust_lora_(bfn, lora_scaling)
         mols = []
-        while len(mols) < runtime_config["inference"]["sample_size"]:
+        while len(mols) < runtime_config.inference_config.sample_size:
             if x is None:
                 s = sample(
                     bfn,
@@ -998,7 +1262,7 @@ def main_script(version: str) -> None:
                     method=sample_method,
                     allowed_tokens=allowed_token,
                 )
-            elif runtime_config["inference"]["guidance_scaffold"]:
+            elif runtime_config.inference_config.guidance_scaffold:
                 s = inpaint(
                     bfn,
                     x,
@@ -1022,16 +1286,16 @@ def main_script(version: str) -> None:
                     method=sample_method,
                     allowed_tokens=allowed_token,
                 )
-            if runtime_config["inference"]["exclude_invalid"]:
+            if runtime_config.inference_config.exclude_invalid:
                 s = [i for i in s if i]
                 if tokeniser_name in ("smiles", "safe"):
                     s = [CanonSmiles(i) for i in s if MolFromSmiles(i)]
             mols.extend(s)
-            if runtime_config["inference"]["exclude_duplicate"]:
+            if runtime_config.inference_config.exclude_duplicate:
                 mols = list(set(mols))
         # ####### save results #######
         with open(
-            runtime_config["inference"]["result_file"], "w", encoding="utf-8"
+            runtime_config.inference_config.result_file, "w", encoding="utf-8"
         ) as f:
             f.write("\n".join(mols))
     # ------- finished -------

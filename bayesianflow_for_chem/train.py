@@ -101,7 +101,7 @@ class Model(LightningModule):
         model: ChemBFN,
         mlp: Optional[MLP] = None,
         scorer: Optional[Scorer] = None,
-        hparam: Dict[str, Union[int, float]] = DEFAULT_MODEL_HPARAM,
+        hparam: Optional[Dict[str, Union[int, float]]] = None,
     ) -> None:
         """
         A `~lightning.LightningModule` wrapper of bayesian flow network for chemistry model.\n
@@ -118,9 +118,11 @@ class Model(LightningModule):
         :type model: bayesianflow_for_chem.model.ChemBFN
         :type mlp: bayesianflow_for_chem.model.MLP | None
         :type scorer: bayesianflow_for_chem.scorer.Scorer | None
-        :type hparam: dict
+        :type hparam: dict | None
         """
         super().__init__()
+        if hparam is None:
+            hparam = DEFAULT_MODEL_HPARAM
         self.model = model
         self.mlp = mlp
         self.scorer = scorer
@@ -208,7 +210,7 @@ class Regressor(LightningModule):
         self,
         model: ChemBFN,
         mlp: MLP,
-        hparam: Dict[str, Union[str, int, float, bool]] = DEFAULT_REGRESSOR_HPARAM,
+        hparam: Optional[Dict[str, Union[str, int, float, bool]]] = None,
     ) -> None:
         """
         A `~lightning.LightningModule` wrapper of ChemBFN regression or classification model.\n
@@ -223,9 +225,11 @@ class Regressor(LightningModule):
                        See `bayesianflow_for_chem.train.DEFAULT_REGRESSOR_HPARAM`.
         :type model: bayesianflow_for_chem.model.ChemBFN
         :type mlp: bayesianflow_for_chem.model.MLP
-        :type hparam: dict
+        :type hparam: dict | None
         """
         super().__init__()
+        if hparam is None:
+            hparam = DEFAULT_REGRESSOR_HPARAM
         self.model = model
         self.mlp = mlp
         self.model.requires_grad_(not hparam["freeze"])

@@ -100,7 +100,7 @@ class Scorer:
         self.vocab_separator = vocab_separator
         self.valid_checker = valid_checker
         self.eta = eta
-        self.name = name
+        self._name = name
 
     def calc_score_loss(self, p: Tensor) -> Tensor:
         """
@@ -132,6 +132,16 @@ class Scorer:
         ]
         loss = (e_k * p).sum(2).mean(1) * p.new_tensor(scores).mean(0)
         return loss.mean()
+
+    @property
+    def name(self) -> str:
+        """
+        Return the name of this scorer.
+
+        :return: name
+        :rtype: str
+        """
+        return self._name
 
 
 if __name__ == "__main__":

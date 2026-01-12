@@ -244,23 +244,25 @@ def test(
 
 def split_dataset(
     file: Union[str, Path],
-    split_ratio: List[int] = [8, 1, 1],
+    split_ratio: Optional[List[int]] = None,
     method: Literal["random", "scaffold"] = "random",
 ) -> None:
     """
     Split a dataset.
 
     :param file: dataset file <file>
-    :param split_ratio: traing-testing-validation ratio
+    :param split_ratio: traing-testing-validation ratio; default is [8, 1, 1]
     :param method: chosen from `'random'` and `'scaffold'`
     :type file: str | pathlib.Path
-    :type split_ratio: list
+    :type split_ratio: list | None
     :type method: str
     :return:
     :rtype: None
     """
+    if split_ratio is None:
+        split_ratio = [8, 1, 1]
     if isinstance(file, Path):
-        file = file.__str__()
+        file = str(file)
     assert file.endswith(".csv")
     assert len(split_ratio) == 3
     assert method in ("random", "scaffold")

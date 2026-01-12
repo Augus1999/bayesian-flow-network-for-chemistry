@@ -126,6 +126,10 @@ _class_ bayesianflow_for_chem.scorer.__Scorer__(_scorers_, _score_criteria_, _vo
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Calculate the score loss.
 
+&nbsp;&nbsp;&nbsp; <span style='color: grey'>_property_</span> __name__ &#8594; str
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Return the name of this scorer.
+
 ### Spectrum
 
 bayesianflow_for_chem.spectra.__build_uv_vis_spectrum__(_etoscs_, _etenergies_, _lambdas_) &#8594; NDArray
