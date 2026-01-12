@@ -47,7 +47,7 @@ class MLP(nn.Module):
         if class_input:
             self.layers[0] = nn.Embedding(size[0], size[1])
         self.layers.append(nn.Linear(size[-2], size[-1]))
-        self.hparam = dict(size=size, class_input=class_input, dropout=dropout)
+        self.hparam = {"size": size, "class_input": class_input, "dropout": dropout}
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -474,13 +474,13 @@ class ChemBFN(nn.Module):
         )
         self.final_layer = FinalLayer(num_vocab, channel)
         self.register_buffer("beta", torch.scalar_tensor(20.4054 / self.K))
-        self.hparam = dict(
-            num_vocab=num_vocab,
-            channel=channel,
-            num_layer=num_layer,
-            num_head=num_head,
-            dropout=dropout,
-        )
+        self.hparam = {
+            "num_vocab": num_vocab,
+            "channel": channel,
+            "num_layer": num_layer,
+            "num_head": num_head,
+            "dropout": dropout,
+        }
         self.lora_param = {}
 
     def enable_lora(
@@ -501,7 +501,11 @@ class ChemBFN(nn.Module):
         :rtype: None
         """
         self.lora_enabled = True
-        self.lora_param = dict(r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout)
+        self.lora_param = {
+            "r": r,
+            "lora_alpha": lora_alpha,
+            "lora_dropout": lora_dropout,
+        }
         self.embedding.enable_lora(r, lora_alpha, lora_dropout)
         for layer in self.encoder_layers:
             layer.enable_lora(r, lora_alpha, lora_dropout)

@@ -1179,6 +1179,7 @@ def main_script(version: str) -> None:
         if not runtime_config.train_config.dynamic_padding:
             os.environ["MAX_PADDING_LENGTH"] = f"{lmax}"  # important!
         torch.set_float32_matmul_precision("medium")
+        rank_zero_info("*" * 25 + " training started " + "*" * 25)
         trainer.fit(
             model,
             dataloader,
@@ -1249,6 +1250,7 @@ def main_script(version: str) -> None:
             x = None
         if bfn.lora_enabled:
             adjust_lora_(bfn, lora_scaling)
+        rank_zero_info("*" * 25 + " inference started " + "*" * 25)
         mols = []
         while len(mols) < runtime_config.inference_config.sample_size:
             if x is None:
@@ -1295,6 +1297,8 @@ def main_script(version: str) -> None:
             mols.extend(s)
             if runtime_config.inference_config.exclude_duplicate:
                 mols = list(set(mols))
+            if r := len(mols) / runtime_config.inference_config.sample_size < 1:
+                rank_zero_info(f"{100 * r:.1f} % finished")
         # ####### save results #######
         with open(
             runtime_config.inference_config.result_file, "w", encoding="utf-8"
