@@ -1098,22 +1098,22 @@ class EnsembleChemBFN(ChemBFN):
         :type adapter_weights: list | dict | None
         :type semi_autoregressive_flags: list | dict | None
         """
-        assert (tl := type(lora_paths)) == type(
-            cond_heads
+        assert isinstance(
+            cond_heads, tl := type(lora_paths)
         ), "`lora_paths` and `cond_heads` should have the same type!"
         assert (n := len(lora_paths)) == len(
             cond_heads
         ), "`lora_paths` and `cond_heads` should have the same length!"
         if adapter_weights:
-            assert tl == type(
-                adapter_weights
+            assert isinstance(
+                adapter_weights, tl
             ), "`lora_paths` and `adapter_weights` should have the same type!"
             assert n == len(
                 adapter_weights
             ), "`lora_paths` and `adapter_weights` should have the same length!"
         if semi_autoregressive_flags:
-            assert tl == type(
-                semi_autoregressive_flags
+            assert isinstance(
+                semi_autoregressive_flags, tl
             ), "`lora_paths` and `semi_autoregressive_flags` should have the same type!"
             assert n == len(
                 semi_autoregressive_flags

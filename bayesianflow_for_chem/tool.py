@@ -264,7 +264,7 @@ def split_dataset(
     if isinstance(file, Path):
         file = str(file)
     assert file.endswith(".csv")
-    assert len(split_ratio) == 3
+    assert len(split_ratio) == 3, "`split_ratio` should has a length of 3."
     assert method in ("random", "scaffold")
     with open(file, "r", encoding="utf-8") as f:
         data = list(csv.reader(f))

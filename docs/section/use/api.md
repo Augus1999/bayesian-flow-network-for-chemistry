@@ -136,6 +136,10 @@ bayesianflow_for_chem.spectra.__build_uv_vis_spectrum__(_etoscs_, _etenergies_, 
 
 &nbsp;&nbsp;&nbsp; Build UV/Vis spectrum from calculated electron transtion energies and oscillator strengths.
 
+bayesianflow_for_chem.spectra.__build_ir_spectrum__(_vibirs_, _vibfreqs_, _nubras_) &#8594; NDArray
+
+&nbsp;&nbsp;&nbsp; Build IR spectrum from calculated vibrational intensities and frequencies.
+
 bayesianflow_for_chem.spectra.__spectra_wasserstein_score__(_spectrum_u_, _spectrum_v_, _x_axis_) &#8594; NDArray
 
 &nbsp;&nbsp;&nbsp; Return the scaled Wasserstein distance between two continuous spectra.

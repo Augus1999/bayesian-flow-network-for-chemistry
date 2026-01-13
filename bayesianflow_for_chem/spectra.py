@@ -15,12 +15,12 @@ def build_uv_vis_spectrum(
     This function follows the GaussView style: https://gaussian.com/uvvisplot/.
 
     :param etoscs: oscillator strengths
-    :param etenergies: transtion energies
-    :param lambdas: wavelengths
+    :param etenergies: transtion energies (unit in eV)
+    :param lambdas: wavelengths (unit in nm)
     :type etoscs: numpy.ndarray
     :type etenergies: numpy.ndarray
     :type lambdas: numpy.ndarray
-    :return: absorption coefficient corrospending to the wavelengths
+    :return: absorption coefficient correspending to the wavelengths
     :rtype: numpy.ndarray
     """
     return (
@@ -31,12 +31,25 @@ def build_uv_vis_spectrum(
     ).sum(0) * 40489.99421
 
 
-def build_ir_raman_spectrum() -> np.ndarray:
+def build_ir_spectrum(
+    vibirs: np.ndarray, vibfreqs: np.ndarray, nubras: np.ndarray
+) -> np.ndarray:
     """
-    Build IR/Raman spectrum
+    Build IR spectrum from calculated vibrational intensities and frequencies. \n
+    We use FWHM = 20 cm^-1.
+
+    :param vibirs: IR intensities (unit in km/mol)
+    :param vibfreqs: vibrational frequencies (unit in 1/cm)
+    :param nubras: wavenumbers (unit in 1/cm)
+    :type vibirs: numpy.ndarray
+    :type vibfreqs: numpy.ndarray
+    :type nubras: numpy.ndarray
+    :return: vibrational mode corresponding to the wavenumbers
+    :rtype: numpy.ndarray
     """
-    # TODO
-    ...
+    a = 100 * vibirs / np.log(10)
+    l = 10 / (np.pow(nubras[None, :] - vibfreqs[:, None], 2) + 100) / np.pi
+    return (l * a[:, None]).sum(0)
 
 
 def spectra_wasserstein_score(
