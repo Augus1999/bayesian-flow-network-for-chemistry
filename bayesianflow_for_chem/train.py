@@ -70,9 +70,10 @@ def focal_loss(
     assert inputs.shape[0] == targets.shape[0], "Shape mismatched."
     num_class = inputs.shape[-1]
     if isinstance(alpha, (list, tuple)):
-        assert num_class == (
-            k := len(alpha)
-        ), f"We have {num_class} classes but you provided {k} balancing factors."
+        assert num_class == (k := len(alpha)), (
+            f"We have {num_class} classes but you provided {k}"
+            f" balancing {'factor' if k in (0, 1) else 'factors'}."
+        )
         alpha = inputs.new_tensor(alpha)
     elif isinstance(alpha, float):
         assert num_class == 2, "A float alpha is only accecpted for binary cases."

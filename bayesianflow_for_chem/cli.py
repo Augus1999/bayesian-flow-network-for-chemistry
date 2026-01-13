@@ -353,7 +353,7 @@ class _ModelConfig:
                     self._flag_critical += 1
             elif key == "base_model":
                 if isinstance(i, list):
-                    if len(i) > 3:
+                    if len(i) >= 3:
                         self._msg.append(
                             f"{_CHECK_MESSAGE[1]} in {self._fn}: Too many checkpoint files."
                         )
