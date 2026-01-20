@@ -29,10 +29,13 @@ _SMI_REGEX_PATTERN = (
     r"W|X[e]|E[u,r,s]|U|D[b,s,y]|"
     r"b|c|n|o|s|p|"
     r"\(|\)|\.|=|#|-|\+|\\|\/|:|"
-    r"~|@|\?|>>?|\*|\$|\%[0-9]{2}|[0-9])"
+    r"~|@|\?|>>?|\*|\$|\%[0-9]{2}|[0-9]|"
+    r"<pad>)"
 )
-_SEL_REGEX_PATTERN = r"(\[[^\]]+]|\.)"
-_FAS_REGEX_PATTERN = r"(A|B|C|D|E|F|G|H|I|J|K|L|M|N|O|P|Q|R|S|T|U|V|W|X|Y|Z|-|\*|\.)"
+_SEL_REGEX_PATTERN = r"(\[[^\]]+]|\.|<pad>)"
+_FAS_REGEX_PATTERN = (
+    r"(A|B|C|D|E|F|G|H|I|J|K|L|M|N|O|P|Q|R|S|T|U|V|W|X|Y|Z|-|\*|\.|<pad>)"
+)
 _smi_regex = re.compile(_SMI_REGEX_PATTERN)
 _sel_regex = re.compile(_SEL_REGEX_PATTERN)
 _fas_regex = re.compile(_FAS_REGEX_PATTERN)

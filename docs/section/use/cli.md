@@ -82,6 +82,8 @@ Important notes:
 > `lora_scaling` and `sample_template` were added in version 2.1.0
 >
 > `plugin_script` was added in version 2.2.0
+>
+> Since version 2.4.3, you can use `"<pad>"` as a token, _e.g._ `"c1cc<pad><pad>"`, in `guidance_scaffold`
 
 #### 4.2. Defining model architecture
 
