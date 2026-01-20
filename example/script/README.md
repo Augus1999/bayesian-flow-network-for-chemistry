@@ -50,7 +50,7 @@ Set `model.semi_autoregressive = True` before starting the training and/or sampl
 from bayesianflow_for_chem import ChemBFN
 
 model = ChemBFN.from_checkpoint("YOUR_MODEL.pt")
-model.enable_lora(r=4, ...)
+model.enable_lora(r=4, ...)  # or r=8, 16, ...
 ```
 
 ## Quantise thy trained model
@@ -62,3 +62,7 @@ model.enable_lora(r=4, ...)
 ```
 
 Now `model` is your dyanmically quantised model that can be directly used.
+
+## A note for customising tokenisation and vocabulary
+
+Three special tokens (`<pad>`, `<start>`, and `<end>`) should be encluded and they need to have indices of **0**, **1**, and **2**, respectively.
