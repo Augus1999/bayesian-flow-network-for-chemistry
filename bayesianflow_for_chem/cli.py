@@ -673,12 +673,7 @@ class _RuntimeConfig:
         """
         if "device" in self._config:
             self.device = self._config["device"]
-        if not "run_name" in self._config:
-            self._msg.append(
-                f"{_CHECK_MESSAGE[1]} in {self._fn}: You need to specifiy 'run_name'."
-            )
-            self._flag_critical += 1
-        else:
+        if "run_name" in self._config:
             self.run_name = self._config["run_name"]
         if (not "tokeniser" in self._config) or (
             not isinstance(self._config["tokeniser"], dict)
