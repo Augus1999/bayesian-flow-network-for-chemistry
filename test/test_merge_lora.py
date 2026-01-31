@@ -31,6 +31,7 @@ def test():
     model.semi_autoregressive = True
     y2 = model.inference(x, mlp)
     merge_lora_(model)
+    assert model.embedding.lora_A is None  # need to be merged
     model.semi_autoregressive = False
     y3 = model.inference(x, mlp)
     model.semi_autoregressive = True
