@@ -25,7 +25,7 @@ from rdkit.Chem import (
 )
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from .data import VOCAB_KEYS
-from .model import ChemBFN, MLP, EnsembleChemBFN
+from .model import ChemBFN, MLP, EnsembleChemBFN, reset_lora_
 
 
 def _find_device() -> torch.device:
@@ -571,11 +571,7 @@ def merge_lora_(model: ChemBFN) -> None:
         if hasattr(module, "lora_A"):
             try:
                 module.weight.data += (module.lora_B @ module.lora_A) * module.scaling
-                module.lora_enabled = False
-                module.lora_A = None
-                module.lora_B = None
-                module.scaling = None
-                module.lora_dropout = None
+                reset_lora_(module)
             except NotImplementedError:
                 warnings.warn("Cannot merge LoRA parameters into quantised model.")
                 return

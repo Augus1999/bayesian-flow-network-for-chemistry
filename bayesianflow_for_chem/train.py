@@ -35,7 +35,7 @@ def _mark_only_lora_as_trainable(model: ChemBFN) -> None:
 
 def _lora_state_dict(model: ChemBFN) -> Dict[str, Tensor]:
     # Modified from https://github.com/microsoft/LoRA/blob/main/loralib/utils.py
-    # We only loard 'real' LoRA parameters.
+    # We only load 'real' LoRA parameters.
     state_dict = model.state_dict()
     return {k: state_dict[k] for k in state_dict if "lora_" in k}
 

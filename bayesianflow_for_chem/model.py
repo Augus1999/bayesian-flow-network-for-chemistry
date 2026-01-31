@@ -165,6 +165,22 @@ class Linear(nn.Linear):
         return result
 
 
+def reset_lora_(module: Linear) -> None:
+    """
+    Reset LoRA layer.
+
+    :param module: LoRA Linear layer
+    :type module: bayesianflow_for_chem.model.Linear
+    :return:
+    :rtype: None
+    """
+    module.lora_enabled = False
+    module.lora_A = None
+    module.lora_B = None
+    module.scaling = None
+    module.lora_dropout = None
+
+
 def _modulate(x: Tensor, shift: Tensor, scale: Tensor) -> Tensor:
     return x * (1 + scale) + shift
 
@@ -1170,11 +1186,7 @@ class EnsembleChemBFN(ChemBFN):
                     module.weight.data += (
                         module.lora_B @ module.lora_A
                     ) * module.scaling
-                    module.lora_enabled = False
-                    module.lora_A = None
-                    module.lora_B = None
-                    module.scaling = None
-                    module.lora_dropout = None
+                    reset_lora_(module)
             v.lora_enabled = False
 
     def discrete_output_distribution(
