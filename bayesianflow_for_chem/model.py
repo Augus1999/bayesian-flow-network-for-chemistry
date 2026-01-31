@@ -7,8 +7,7 @@ from pathlib import Path
 from copy import deepcopy
 from typing import List, Tuple, Dict, Optional, Union, Callable, Self
 import torch
-import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, nn
 from torch.nn.functional import softmax, linear
 from torch.nn.functional import dropout as dropout_fn
 
@@ -629,12 +628,11 @@ class ChemBFN(nn.Module):
         theta = 2 * theta - 1  # rescale to [-1, 1]
         if w is None:
             return softmax(self.forward(theta, t, None, y), -1)
-        elif y is None:
+        if y is None:
             return softmax(self.forward(theta, t, None, None), -1)
-        else:
-            p_cond = self.forward(theta, t, None, y)
-            p_uncond = self.forward(theta, t, None, None)
-            return softmax((1 + w) * p_cond - w * p_uncond, -1)
+        p_cond = self.forward(theta, t, None, y)
+        p_uncond = self.forward(theta, t, None, None)
+        return softmax((1 + w) * p_cond - w * p_uncond, -1)
 
     def cts_loss(
         self,
