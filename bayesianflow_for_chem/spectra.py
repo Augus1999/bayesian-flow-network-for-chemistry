@@ -12,7 +12,8 @@ def build_uv_vis_spectrum(
 ) -> np.ndarray:
     """
     Build UV/Vis spectrum from calculated electron transtion energies and oscillator strengths. \n
-    This function follows the GaussView style: https://gaussian.com/uvvisplot/.
+    This function follows the GaussView style: https://gaussian.com/uvvisplot/,
+    where the shape of the spectrum is obtained by convoluting delta functions with Gaussians.
 
     :param etoscs: oscillator strengths
     :param etenergies: transtion energies (unit in eV)
@@ -32,23 +33,44 @@ def build_uv_vis_spectrum(
 
 
 def build_ir_spectrum(
-    vibirs: np.ndarray, vibfreqs: np.ndarray, nubras: np.ndarray
+    vibirs: np.ndarray, vibfreqs: np.ndarray, nubars: np.ndarray
 ) -> np.ndarray:
     """
     Build IR spectrum from calculated vibrational intensities and frequencies. \n
-    We use FWHM = 20 cm^-1.
+    We use FWHM = 20 cm^-1 for the Lorentzian line shape.
 
     :param vibirs: IR intensities (unit in km/mol)
     :param vibfreqs: vibrational frequencies (unit in 1/cm)
-    :param nubras: wavenumbers (unit in 1/cm)
+    :param nubars: wavenumbers (unit in 1/cm)
     :type vibirs: numpy.ndarray
     :type vibfreqs: numpy.ndarray
-    :type nubras: numpy.ndarray
+    :type nubars: numpy.ndarray
     :return: vibrational mode corresponding to the wavenumbers
     :rtype: numpy.ndarray
     """
     a = 100 * vibirs / np.log(10)
-    l = 10 / (np.pow(nubras[None, :] - vibfreqs[:, None], 2) + 100) / np.pi
+    l = 10 / (np.pow(nubars[None, :] - vibfreqs[:, None], 2) + 100) / np.pi
+    return (l * a[:, None]).sum(0)
+
+
+def build_raman_spectrum(
+    vibramans: np.ndarray, vibfreqs: np.ndarray, nubars: np.ndarray
+) -> np.ndarray:
+    """
+    Build Raman spectrum from calculated vibrational intensities and frequencies. \n
+    We use FWHM = 20 cm^-1 for the Lorentzian line shape.
+
+    :param vibramans: IR intensities (unit in angstrom^4/Da)
+    :param vibfreqs: vibrational frequencies (unit in 1/cm)
+    :param nubars: wavenumbers (unit in 1/cm)
+    :type vibramans: numpy.ndarray
+    :type vibfreqs: numpy.ndarray
+    :type nubars: numpy.ndarray
+    :return: vibrational mode corresponding to the wavenumbers
+    :rtype: numpy.ndarray
+    """
+    a = 250 * np.pow(vibramans, 0.5)
+    l = 10 / (np.pow(nubars[None, :] - vibfreqs[:, None], 2) + 100) / np.pi
     return (l * a[:, None]).sum(0)
 
 
