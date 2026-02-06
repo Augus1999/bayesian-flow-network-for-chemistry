@@ -160,7 +160,7 @@ bayesianflow_for_chem.tool.__split_dataset__(_file_, _split_ratio=[8, 1, 1]_, _m
 
 bayesianflow_for_chem.tool.__smaple__(_model_, _batch_size_, _sequence_size_, _sample_step=100_, _y=None_, _guidance_strength=4.0_, _device=None_, _vocab_keys=VOCAB_KEYS_, _separator=""_, _method="BFN"_, _allowed_tokens="all"_, _sort=False_) &#8594; list
 
-&nbsp;&nbsp;&nbsp; Generate molecules.
+&nbsp;&nbsp;&nbsp; _De novo_ generate molecules.
 
 bayesianflow_for_chem.tool.__inpaint__(_model_, _x_, _sample_step=100_, _y=None_, _guidance_strength=4.0_, _device=None_, _vocab_keys=VOCAB_KEYS_, _separator=""_, _method="BFN"_, _allowed_tokens="all"_, _sort=False_) &#8594; list
 
@@ -182,11 +182,6 @@ bayesianflow_for_chem.tool.__merge_lora\___(_model_) &#8594; None
 
 &nbsp;&nbsp;&nbsp; In-place merge LoRA parameters into base model.
 
-
-bayesianflow_for_chem.train.__focal_loss__(_inputs_, _targets_, _alpha=None_, _gamma=2_, _reduction="mean"_) &#8594; Tensor
-
-&nbsp;&nbsp;&nbsp; An implementation of binary and multi-class Focal Loss.
-
 ---
 
 _class_ bayesianflow_for_chem.tool.__GeometryConverter__
@@ -199,7 +194,11 @@ _class_ bayesianflow_for_chem.tool.__GeometryConverter__
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Transform molecular geometry to SMILES string.
 
-### LightningModule Wrapper
+### Training Helper
+
+bayesianflow_for_chem.train.__focal_loss__(_inputs_, _targets_, _alpha=None_, _gamma=2_, _reduction="mean"_) &#8594; Tensor
+
+&nbsp;&nbsp;&nbsp; An implementation of binary and multi-class Focal Loss.
 
 _class_ bayesianflow_for_chem.train.__Model__(_model_, _mlp=None_, _scorer=None_, _hparam=DEFAULT_MODEL_HPARAM_)
 
