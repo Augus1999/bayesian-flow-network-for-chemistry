@@ -131,7 +131,7 @@ Out-of-distribution generation and fast sampling:
 ```bibtex
 @misc{2024chembfn_ood,
     title={Bayesian Flow Is All You Need to Sample Out-of-Distribution Chemical Spaces}, 
-    author={Nianze Tao},
+    author={Tao, Nianze and Abe, Minori},
     year={2024},
     eprint={2412.11439},
     archivePrefix={arXiv},
