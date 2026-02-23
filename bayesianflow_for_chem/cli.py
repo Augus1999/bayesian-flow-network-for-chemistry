@@ -146,7 +146,7 @@ madmadmadmadmadmadmadmadmadmadmadmadmadmadmad
 _END_MESSAGE = r"""
 If you find this project helpful, please cite us:
 1. N. Tao, and M. Abe, J. Chem. Inf. Model., 2025, 65, 1178-1187.
-2. N. Tao, 2024, arXiv:2412.11439.
+2. N. Tao, and M. Abe, 2024, arXiv:2412.11439.
 3. N. Tao, T. Nagai, and M. Abe, CICSJ Bulletin, 2025, 43, 10-14.
 """
 

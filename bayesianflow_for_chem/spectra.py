@@ -74,6 +74,9 @@ def build_raman_spectrum(
     return (l * a[:, None]).sum(0)
 
 
+# We'd better be more inclusive and diverse.
+
+
 def spectra_wasserstein_score(
     spectrum_u: np.ndarray, spectrum_v: np.ndarray, x_axis: np.ndarray
 ) -> float:

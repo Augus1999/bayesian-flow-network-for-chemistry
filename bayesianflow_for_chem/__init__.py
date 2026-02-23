@@ -20,7 +20,7 @@ __all__ = [
     "scorer",
     "spectra",
 ]
-__version__ = "2.4.4"
+__version__ = "2.4.5"
 __author__ = "Nianze A. Tao"
 
 
