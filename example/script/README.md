@@ -38,7 +38,7 @@ x = x[None, ...].repeat(5, 1).to("cuda")
 smiles = inpaint(model, x, 100)
 ```
 
-Our model can be fully traced and captured into a graph, however, `torch.export.export(...)` does not work as we have few esscential values and methods that are not directly used in `forward` path.
+Our model can be fully traced and captured into a graph, however, exporting a `ChemBFN` or `EnsembleChemBFN` object via `torch.export.export(...)` does not work as we have few essential values and methods that are not directly used in `forward` path.
 
 ## SAR version?
 
