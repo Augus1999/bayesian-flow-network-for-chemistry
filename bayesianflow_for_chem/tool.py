@@ -24,7 +24,8 @@ from rdkit.Chem import (
     AddHs,
 )
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
-from .data import VOCAB_KEYS
+from .data import VOCAB_KEYS, smiles2token, graph_collate
+from .geom import EGNN
 from .model import ChemBFN, MLP, EnsembleChemBFN, reset_lora_
 
 
@@ -58,9 +59,9 @@ def _parse_and_assert_param(
 
 
 def _map_model_to_device(
-    model: Union[ChemBFN, EnsembleChemBFN, MLP, torch.fx.GraphModule],
+    model: Union[ChemBFN, EnsembleChemBFN, MLP, EGNN, torch.fx.GraphModule],
     device: Union[str, torch.device],
-):
+) -> Union[ChemBFN, EnsembleChemBFN, MLP, EGNN, torch.fx.GraphModule]:
     if isinstance(model, torch.fx.GraphModule):
         return model.to(device)
     return model.to(device).eval()
@@ -630,8 +631,7 @@ class GeometryConverter:
                 raise RuntimeError(
                     "`xTB` is not found! Make sure it is installed and added into the PATH."
                 )
-        mol = MolFromSmiles(smiles)
-        mol = AddHs(mol)
+        mol = AddHs(MolFromSmiles(smiles))
         AllChem.EmbedMultipleConfs(mol, numConfs=num_conformers, params=AllChem.ETKDG())
         symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
         energies = []
@@ -679,6 +679,65 @@ class GeometryConverter:
                     symbols = symbols.flatten().tolist()
                     coordinates = coordinates.astype(np.float64)
         return symbols, coordinates
+
+    @staticmethod
+    @torch.inference_mode()
+    def smiles2cartesian2(
+        smiles_list: List[str],
+        model: ChemBFN,
+        searcher: EGNN,
+        search_step: int = 100,
+        lattice: Union[Tensor, List[np.ndarray], None] = None,
+        device: Union[str, torch.device, None] = None,
+    ) -> List[Tuple[List[str], np.ndarray]]:
+        """
+        Conformer searching fully performed by ML models.
+
+        :param smiles_list: a list SMILES strings
+        :param model: a trained `~bayesianflow_for_chem.model.ChemBFN` instance
+        :param searcher: a trained `~bayesianflow_for_chem.geom.EGNN` instance
+        :param search_step: number of searching steps
+        :param lattice: unit cell vectors if needed; default value is `None`
+        :param device: hardware accelerator
+        :type smiles_list: list
+        :type model: bayesianflow_for_chem.model.ChemBFN
+        :type searcher: bayesianflow_for_chem.geom.EGNN
+        :type search_step: int
+        :type device: str | torch.device | None
+        :return: a list of `(atomic symbols, cartesian coordinates)`
+        :rtype: list
+        """
+        if device is None:
+            device = _find_device()
+        model = _map_model_to_device(model, device)
+        searcher = _map_model_to_device(searcher, device)
+        mlp = _map_model_to_device(torch.nn.Identity(), device)
+        mols, symbols = [], []
+        for smi in smiles_list:
+            x = smiles2token(smi)
+            mol = AddHs(MolFromSmiles(smi))
+            symbols.append([atom.GetSymbol() for atom in mol.GetAtoms()])
+            charges = torch.tensor(
+                [atom.GetAtomicNum() for atom in mol.GetAtoms()], dtype=torch.long
+            )
+            mols.append({"token": x, "Z": charges})
+        mols = graph_collate(mols)
+        if lattice is not None:
+            if not torch.is_tensor(lattice):
+                lattice = torch.tensor(lattice, dtype=torch.float32)
+            assert lattice.shape == (len(smiles_list, 3, 3)), "Shape mismatched."
+            mols["lattice"] = lattice
+        mols = _map_value_to_device(mols, device)
+        z, batch, token, lattice = (
+            mols["Z"],
+            mols["batch"],
+            mols["token"],
+            mols.get("lattice", None),
+        )
+        mol_embed = model.inference(token, mlp)
+        coordinates = searcher.sample(z, batch, mol_embed, search_step, lattice)
+        coordinates = coordinates[0].split([len(i) for i in symbols], 0)
+        return list(zip(symbols, [r.numpy(force=True) for r in coordinates]))
 
     def cartesian2smiles(
         self,

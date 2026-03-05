@@ -6,11 +6,12 @@ Tokenise SMILES/SAFE/SELFIES/FASTA strings.
 import os
 import re
 from pathlib import Path
-from typing import Any, List, Dict, Union, Callable
+from typing import Any, List, Dict, Optional, Union, Callable
 import torch
 import torch.nn.functional as F
 from torch import Tensor
 from torch.utils.data import Dataset
+from ase.io import read
 
 __filedir__ = Path(__file__).parent
 
@@ -172,6 +173,49 @@ def collate(batch: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
     return out_dict
 
 
+def graph_collate(batch: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
+    """
+    Padding the graph data in one batch into the same size.\n
+    Should be passed to `~torch.utils.data.DataLoader`
+    as `DataLoader(collate_fn=graph_collate, ...)`.
+
+    :param batch: a list of data (one batch)
+    :type batch: list
+    :return: batched {
+                        "token": token,
+                        "Z": atmoic numbers,
+                        "R": nuclear coordinates,
+                        "batch": batching mask,
+                        "lattice": unit cell vectors (optional)
+                        }
+    :rtype: dict
+    """
+    out_dict = collate(batch)
+    charges, positions, mask, lattice = [], [], [], []
+    for item in batch:
+        charges.append(item["Z"])
+        if "R" in item:
+            positions.append(item["R"])
+        if "lattice" in item:
+            lattice.append(item["lattice"][None, ...])
+    charges = torch.cat(charges, dim=0)[None, ...]
+    n_total = charges.shape[1]
+    i = 0
+    for item in batch:
+        n = item["Z"].shape[0]
+        batch = torch.ones(1, n)
+        p1, p2 = torch.zeros(1, i), torch.zeros(1, n_total - n - i)
+        mask.append(torch.cat([p1, batch, p2], dim=-1))
+        i += n
+    mask = torch.cat(mask, dim=0)[..., None]
+    out_dict.update({"Z": charges, "batch": mask})
+    if positions:
+        out_dict["R"] = torch.cat(positions, dim=0)[None, ...]
+    if lattice:
+        out_dict["lattice"] = torch.cat(lattice, dim=0)
+    return out_dict
+
+
 class CSVData(Dataset):
     """
     Customisable CSV dataset class.
@@ -234,6 +278,79 @@ class CSVData(Dataset):
         :rtype: None
         """
         self.mapping = mapping
+
+
+class XYZData(Dataset):
+    """
+    XYZ dataset class.
+    """
+
+    def __init__(self, file: Union[str, Path], use_pbc: bool = False) -> None:
+        """
+        Define dataset stored in extended-XYZ file.
+
+        :param file: dataset file name <file>
+        :param use_pbc: whether to use PBC
+        :type file: str | pathlib.Path
+        :type use_pbc: bool
+        """
+        super().__init__()
+        self.data = read(file, index=":")
+        self.use_pbc = use_pbc
+        self.smi_keys: Union[str, List[str]] = "all"
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, idx: Union[int, Tensor]) -> Dict[str, Tensor]:
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        d = self.data[idx]
+        z = torch.tensor(d.numbers, dtype=torch.long)
+        r = torch.tensor(d.positions, dtype=torch.float32)
+        smi = []
+        for key, item in d.info.items():
+            if isinstance(key, str) and "smiles" in (_key := key.lower()):
+                smi.append(item.replace(" ", ""))
+                if self.smi_keys != "all":
+                    if _key not in self.smi_keys:
+                        smi.pop()
+        smi = ".".join(smi)
+        assert len(smi) != 0, "Could not find an associated SMILES string!"
+        token = smiles2token(smi)
+        data_dict = {"token": token, "Z": z, "R": r}
+        lattice = torch.tensor(d.cell.tolist(), dtype=torch.float32)
+        if lattice.abs().sum() > 0:
+            pbc = torch.tensor(d.pbc, dtype=torch.float32)
+            if pbc.sum() > 0 and self.use_pbc:
+                # mask the non-periodic direction(s)
+                data_dict["lattice"] = lattice * pbc[:, None]
+        return data_dict
+
+    def set_smiles_keys(self, smi_keys: Optional[List[str]] = None) -> None:
+        """
+        Pass a list of wanted SMILES keys to be selected in the dataset.
+
+        e.g.
+        ```python
+        from bayesianflow_for_chem.data import XYZData
+
+
+        dataset = XYZData(...)
+        dataset.set_smiles_keys(["reactant_smiles", "reagent_smiles"])
+        ```
+
+        :param smi_keys: a list of wanted SMILES keys;
+                         all keys will be used if `None` is given;
+                         default value is `None`
+        :type smi_keys: list | None
+        :return:
+        :rtype: None
+        """
+        if smi_keys is None:
+            return
+        assert isinstance(smi_keys, list)
+        self.smi_keys = [i.lower() for i in smi_keys]
 
 
 if __name__ == "__main__":

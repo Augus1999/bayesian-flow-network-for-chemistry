@@ -13,8 +13,10 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from lightning import LightningModule
 from .model import ChemBFN, MLP
 from .scorer import Scorer
+from .geom import EGNN
 
 DEFAULT_MODEL_HPARAM = {"lr": 5e-5, "lr_warmup_step": 1000, "uncond_prob": 0.2}
+DEFAULT_GNN_HPARAM = {"lr": 1e-4, "lr_warmup_step": 1000}
 DEFAULT_REGRESSOR_HPARAM = {
     "mode": (_mode := "regression"),
     "lr_scheduler_factor": 0.8,
@@ -276,7 +278,7 @@ class Regressor(LightningModule):
             val_loss = (z * y_mask - y).abs().sum() / y_mask.sum()
         self.log("val_loss", val_loss.item())
 
-    def configure_optimizers(self) -> Dict:
+    def configure_optimizers(self) -> Dict[str, Union[op.AdamW, Dict]]:
         optimizer = op.AdamW(self.parameters(), lr=1e-7, weight_decay=0.01)
         lr_scheduler_config = {
             "scheduler": ReduceLROnPlateau(
@@ -333,3 +335,79 @@ class Regressor(LightningModule):
                     {"nn": self.model.state_dict(), "hparam": self.model.hparam},
                     workdir / "model_ft.pt",
                 )
+
+
+class GNN(LightningModule):
+    """
+    GNN class for training only.
+    """
+
+    def __init__(
+        self,
+        model: ChemBFN,
+        gnn: EGNN,
+        hparam: Optional[Dict[str, Union[int, float]]] = None,
+    ) -> None:
+        """
+        A `~lightning.LightningModule` wrapper of conformer searching model.\n
+        This module is used in training stage only.
+        By calling `GNN(...).export_model(YOUR_WORK_DIR)` after training,
+        the models will be saved to `YOUR_WORK_DIR/model.pt`
+
+        :param model: `~bayesianflow_for_chem.model.ChemBFN` instance.
+        :param gnn: `~bayesianflow_for_chem.geom.EGNN` instance.
+        :param hparam: a `dict` instance of hyperparameters.
+                       See `bayesianflow_for_chem.train.DEFAULT_GNN_HPARAM`.
+        :type model: bayesianflow_for_chem.model.ChemBNF
+        :type gnn: bayesianflow_for_chem.geom.EGNN
+        :type hparam: dict
+        """
+        super().__init__()
+        if hparam is None:
+            hparam = DEFAULT_GNN_HPARAM
+        self.model = model
+        self.gnn = gnn
+        self.mlp = torch.nn.Identity()
+        self.model.requires_grad_(False)
+        self.mlp.requires_grad_(False)
+        self.save_hyperparameters(hparam, ignore=["model", "gnn"])
+
+    def training_step(self, batch: Dict[str, Tensor]) -> Tensor:
+        x, z, r, b = batch["token"], batch["Z"], batch["R"], batch["batch"]
+        lattice = batch.get("lattice", None)
+        t = torch.rand((x.shape[0], 1, 1), device=x.device)
+        m = self.model.inference(x, self.mlp)
+        loss = self.gnn.continuous_time_loss(z, r, b, m, t, lattice)
+        self.log("continuous_time_loss", loss.item())
+        return loss
+
+    def configure_optimizers(self) -> Dict[str, op.AdamW]:
+        optimizer = op.AdamW(self.parameters(), lr=1e-8, weight_decay=0.01)
+        return {"optimizer": optimizer}
+
+    def optimizer_step(self, *args, **kwargs) -> None:
+        optimizer: op.AdamW = kwargs["optimizer"] if "optimizer" in kwargs else args[2]
+        # warm-up step
+        if self.trainer.global_step < self.hparams.lr_warmup_step:
+            lr_scale = int(self.trainer.global_step + 1) / self.hparams.lr_warmup_step
+            lr_scale = min(1.0, lr_scale)
+            for pg in optimizer.param_groups:
+                pg["lr"] = lr_scale * self.hparams.lr
+        super().optimizer_step(*args, **kwargs)
+        optimizer.zero_grad(set_to_none=True)
+
+    def export_model(self, workdir: Path) -> None:
+        """
+        Save the trained model.
+
+        :param workdir: the directory to save the model
+        :type workdir: pathlib.Path
+        :return:
+        :rtype: None
+        """
+        if not workdir.exists():
+            workdir.mkdir()
+        torch.save(
+            {"nn": self.gnn.state_dict(), "hparam": self.gnn.hparam},
+            workdir / "model.pt",
+        )
