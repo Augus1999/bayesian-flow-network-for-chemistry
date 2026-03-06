@@ -703,6 +703,7 @@ class GeometryConverter:
         :type model: bayesianflow_for_chem.model.ChemBFN
         :type searcher: bayesianflow_for_chem.geom.EGNN
         :type search_step: int
+        :type lattice: torch.Tensor | list | None
         :type device: str | torch.device | None
         :return: a list of `(atomic symbols, cartesian coordinates)`
         :rtype: list
