@@ -453,7 +453,7 @@ class EGNN(nn.Module):
         n_a = z.shape[-1]
         t = (t.repeat(1, n_a, 1) * batch).sum(0, True)
         gamma = 1 - (a := self.sigma.pow(2 * t))
-        mu = gamma * r + gamma * (1 - gamma).sqrt() * torch.randn_like(r)
+        mu = gamma * r + (gamma * (1 - gamma)).sqrt() * torch.randn_like(r)
         x_hat = self.cts_output_prediction(z, mu, batch, mol_embed, t, gamma, lattice)
         loss = -self.sigma.log() * (r - x_hat).pow(2) / a
         return loss.mean()
