@@ -421,7 +421,7 @@ class EGNN(nn.Module):
             mu / gamma - ((1 - gamma) / gamma).sqrt() * eps,
             0,
         )
-        return x_hat
+        return x_hat.clamp(-100, 100)
 
     def continuous_time_loss(
         self,

@@ -25,7 +25,7 @@ ChemBFN provides the state-of-the-art functionalities of
 * Molecular property and activity prediction finetuning
 * Reaction yield prediction finetuning
 
-in an all-in-one-model style.
+in an all-in-one-model style. A built-in equiviant GNN can further convert the generated SMILES strings to the corresponding 3D conformations.
 
 ## News
 

@@ -16,7 +16,7 @@ from .scorer import Scorer
 from .geom import EGNN
 
 DEFAULT_MODEL_HPARAM = {"lr": 5e-5, "lr_warmup_step": 1000, "uncond_prob": 0.2}
-DEFAULT_GNN_HPARAM = {"lr": 1e-4, "lr_warmup_step": 1000}
+DEFAULT_GNN_HPARAM = {"lr": 5e-5, "lr_warmup_step": 1000}
 DEFAULT_REGRESSOR_HPARAM = {
     "mode": (_mode := "regression"),
     "lr_scheduler_factor": 0.8,
