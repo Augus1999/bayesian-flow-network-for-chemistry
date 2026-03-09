@@ -298,7 +298,7 @@ class Interaction(nn.Module):
         n_f = x.shape[-1]
         v_ij, vec = self.cfconv(self.linear(x), r, batch_mask, lattice)
         v_ij, s_ij = torch.split(self.mlp(v_ij), [n_f, 1], -1)
-        return x + v_ij.sum(-2), r + (vec * s_ij).sum(-2)
+        return x + v_ij.sum(-2), r + (vec * s_ij.clamp(-10, 10)).sum(-2)
 
 
 class EGNN(nn.Module):
@@ -312,6 +312,7 @@ class EGNN(nn.Module):
         channel: int = 256,
         mol_channel: int = 512,
         cutoff_radius: float = 5.0,
+        cube_length: float = 20.0,
         num_kernel: int = 64,
         max_neighbour: int = 15,
         num_layer: int = 6,
@@ -322,7 +323,8 @@ class EGNN(nn.Module):
         :param num_embed: number of embedded elements
         :param channel: hidden layer features
         :param mol_channel: molecular embedding features
-        :param cutoff_radius: cutoff radius
+        :param cutoff_radius: piarwise distance cutoff radius
+        :param cube_length: the length of the cube a molecule fitted in
         :param num_kernel: number of RBF features
         :param max_neighbour: maximum number of atom-nighbours
         :param num_layer: number of Interaction blocks
@@ -330,11 +332,13 @@ class EGNN(nn.Module):
         :type channel: int
         :type mol_channel: int
         :type cutoff_radius: float
+        :type cube_length: float
         :type num_kernel: int
         :type max_neighbour: int
         :type num_layer: int
         """
         super().__init__()
+        self.x = cube_length / 2
         self.embed = Embedding(num_embed, channel, mol_channel)
         self.interaction_layers = nn.ModuleList(
             [
@@ -348,10 +352,25 @@ class EGNN(nn.Module):
             "channel": channel,
             "mol_channel": mol_channel,
             "cutoff_radius": cutoff_radius,
+            "cube_length": cube_length,
             "num_kernel": num_kernel,
             "max_neighbour": max_neighbour,
             "num_layer": num_layer,
         }
+
+    @staticmethod
+    def _move_to_charge_centre(z: Tensor, r: Tensor, batch: Tensor) -> Tensor:
+        # Move the molecules to the charge centres.
+        #
+        # z: atomic charges;       shape: (1, n_a)
+        # r: nuclear coordinates;  shape: (1, n_a, 3)
+        # batch: batch mask;       shape: (n_b, n_a, 1)
+        n_b, n_a, _ = batch.shape
+        _r = r.repeat(n_b, 1, 1) * batch
+        _z = z[..., None].repeat(n_b, 1, 1) * batch
+        centre = (_z * _r).sum(1, True) / z.sum(1, True)
+        centre = (centre.repeat(1, n_a, 1) * batch).sum(0, True)
+        return r - centre
 
     def forward(
         self,
@@ -385,7 +404,7 @@ class EGNN(nn.Module):
         x = self.embed(z, mol_embed, batch, t)
         for layer in self.interaction_layers:
             x, r = layer(x, r, batch_mask, lattice)
-        return r
+        return self._move_to_charge_centre(z, r, batch)
 
     def cts_output_prediction(
         self,
@@ -417,11 +436,11 @@ class EGNN(nn.Module):
         """
         eps = self.forward(z, mu, batch, mol_embed, t, lattice)
         x_hat = torch.where(
-            t.repeat(1, 1, 3) >= 1e-6,
+            t.repeat(1, 1, 3) > 1e-4,
             mu / gamma - ((1 - gamma) / gamma).sqrt() * eps,
             0,
         )
-        return x_hat.clamp(-100, 100)
+        return self._move_to_charge_centre(z, x_hat.clamp(-self.x, self.x), batch)
 
     def continuous_time_loss(
         self,
@@ -451,11 +470,12 @@ class EGNN(nn.Module):
         :rtype: torch.Tensor
         """
         n_a = z.shape[-1]
-        t = (t.repeat(1, n_a, 1) * batch).sum(0, True)
-        gamma = 1 - (a := self.sigma.pow(2 * t))
+        t = (t.repeat(1, n_a, 1) * batch).sum(0, True).clamp(min=1e-4)
+        gamma = 1 - self.sigma.pow(2 * t)
         mu = gamma * r + (gamma * (1 - gamma)).sqrt() * torch.randn_like(r)
+        mu = self._move_to_charge_centre(z, mu.clamp(-self.x, self.x), batch)
         x_hat = self.cts_output_prediction(z, mu, batch, mol_embed, t, gamma, lattice)
-        loss = -self.sigma.log() * (r - x_hat).pow(2) / a
+        loss = -self.sigma.log() * (r - x_hat).pow(2) * self.sigma.pow(-2 * t)
         return loss.mean()
 
     @torch.inference_mode()
