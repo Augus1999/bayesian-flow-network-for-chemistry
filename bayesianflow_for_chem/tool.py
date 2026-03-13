@@ -12,6 +12,8 @@ import torch
 import numpy as np
 from torch import Tensor, softmax
 from torch.utils.data import DataLoader
+from ase import Atoms
+from ase.optimize import FIRE2
 from rdkit.Chem import (
     rdDetermineBonds,
     AllChem,
@@ -24,8 +26,8 @@ from rdkit.Chem import (
     AddHs,
 )
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
-from .data import VOCAB_KEYS, smiles2token, graph_collate
-from .geom import EGNN
+from .data import VOCAB_KEYS
+from .geom import MMFF
 from .model import ChemBFN, MLP, EnsembleChemBFN, reset_lora_
 
 
@@ -59,9 +61,9 @@ def _parse_and_assert_param(
 
 
 def _map_model_to_device(
-    model: Union[ChemBFN, EnsembleChemBFN, MLP, EGNN, torch.fx.GraphModule],
+    model: Union[ChemBFN, EnsembleChemBFN, MLP, torch.fx.GraphModule],
     device: Union[str, torch.device],
-) -> Union[ChemBFN, EnsembleChemBFN, MLP, EGNN, torch.fx.GraphModule]:
+) -> Union[ChemBFN, EnsembleChemBFN, MLP, torch.fx.GraphModule]:
     if isinstance(model, torch.fx.GraphModule):
         return model.to(device)
     return model.to(device).eval()
@@ -599,6 +601,7 @@ class GeometryConverter:
         rdkit_ff_type: Literal["MMFF", "UFF"] = "MMFF",
         refine_with_crest: bool = False,
         spin: float = 0.0,
+        return_atomic_number: bool = False,
     ) -> Tuple[List[str], np.ndarray]:
         """
         Guess the 3D geometry from SMILES string via conformer search.
@@ -608,11 +611,13 @@ class GeometryConverter:
         :param rdkit_ff_type: force field type chosen in `'MMFF'` and `'UFF'`
         :param refine_with_crest: find the best conformer via CREST
         :param spin: total spin; only required when `refine_with_crest=True`
+        :param return_atomic_number: whether to return atomic numbers instead of symbols
         :type smiles: str
         :type num_conformers: int
         :type rdkit_ff_type: str
         :type refine_with_crest: bool
         :type spin: float
+        :type return_atomic_number: bool
         :return: atomic symbols \n
                  cartesian coordinates;  shape: (n_a, 3)
         :rtype: tuple
@@ -634,6 +639,7 @@ class GeometryConverter:
         mol = AddHs(MolFromSmiles(smiles))
         AllChem.EmbedMultipleConfs(mol, numConfs=num_conformers, params=AllChem.ETKDG())
         symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
+        numbers = [atom.GetSymbol() for atom in mol.GetAtoms()]
         energies = []
         for conf_id in range(num_conformers):
             if rdkit_ff_type.lower() == "mmff":
@@ -678,67 +684,53 @@ class GeometryConverter:
                     symbols, coordinates = np.split(xyz_data, [1], axis=-1)
                     symbols = symbols.flatten().tolist()
                     coordinates = coordinates.astype(np.float64)
-        return symbols, coordinates
+        return numbers if return_atomic_number else symbols, coordinates
 
-    @staticmethod
-    @torch.inference_mode()
     def smiles2cartesian2(
-        smiles_list: List[str],
-        model: ChemBFN,
-        searcher: EGNN,
-        search_step: int = 100,
-        lattice: Union[Tensor, List[np.ndarray], None] = None,
+        self,
+        smiles: str,
+        mmff_file: Union[str, Path],
+        optimise_step: int = 50,
+        force_threshold: float = 0.05,
+        lattice: Union[List, np.ndarray, None] = None,
         device: Union[str, torch.device, None] = None,
-    ) -> List[Tuple[List[str], np.ndarray]]:
+    ) -> Tuple[List[str], np.ndarray]:
         """
-        Conformer searching fully performed by ML models.
+        Conformer searching fully performed by ML model.
 
-        :param smiles_list: a list SMILES strings
-        :param model: a trained `~bayesianflow_for_chem.model.ChemBFN` instance
-        :param searcher: a trained `~bayesianflow_for_chem.geom.EGNN` instance
-        :param search_step: number of searching steps
-        :param lattice: unit cell vectors if needed; default value is `None`
+        :param smiles: SMILES string
+        :param mmff_file: MMFF model file <file>
+        :param optimise_step: number of optimisation steps
+        :param force_threshold: Convergence criterion of the forces on atoms
+        :param lattice: unit cell vectors if needed;
+                        default value is `None`;     shape: (3, 3)
         :param device: hardware accelerator
-        :type smiles_list: list
-        :type model: bayesianflow_for_chem.model.ChemBFN
-        :type searcher: bayesianflow_for_chem.geom.EGNN
-        :type search_step: int
-        :type lattice: torch.Tensor | list | None
+        :type smiles: str
+        :type mmff_file: str | pathlib.Path
+        :type optimise_step: int
+        :type force_threshold: float
+        :type lattice: numpy.ndarray | list | None
         :type device: str | torch.device | None
-        :return: a list of `(atomic symbols, cartesian coordinates)`
-        :rtype: list
+        :return: atomic symbols \n
+                 cartesian coordinates;              shape: (n_a, 3)
+        :rtype: tuple
         """
-        if device is None:
-            device = _find_device()
-        model = _map_model_to_device(model, device)
-        searcher = _map_model_to_device(searcher, device)
-        mlp = _map_model_to_device(torch.nn.Identity(), device)
-        mols, symbols = [], []
-        for smi in smiles_list:
-            x = smiles2token(smi)
-            mol = AddHs(MolFromSmiles(smi))
-            symbols.append([atom.GetSymbol() for atom in mol.GetAtoms()])
-            charges = torch.tensor(
-                [atom.GetAtomicNum() for atom in mol.GetAtoms()], dtype=torch.long
-            )
-            mols.append({"token": x, "Z": charges})
-        mols = graph_collate(mols)
+        device = _find_device() if device is None else device
+        mmff = MMFF(mmff_file, device=device)
+        symbols, positions = self.smiles2cartesian(smiles, 5, "UFF")
+        mol = Atoms(symbols=symbols, positions=positions, calculator=mmff)
         if lattice is not None:
-            if not torch.is_tensor(lattice):
-                lattice = torch.tensor(lattice, dtype=torch.float32)
-            assert lattice.shape == (len(smiles_list, 3, 3)), "Shape mismatched."
-            mols["lattice"] = lattice
-        mols = _map_value_to_device(mols, device)
-        z, batch, token, lattice = (
-            mols["Z"],
-            mols["batch"],
-            mols["token"],
-            mols.get("lattice", None),
-        )
-        mol_embed = model.inference(token, mlp)
-        coordinates = searcher.sample(z, batch, mol_embed, search_step, lattice)
-        coordinates = coordinates[0].split([len(i) for i in symbols], 0)
-        return list(zip(symbols, [r.numpy(force=True) for r in coordinates]))
+            mol.set_cell(lattice)
+            mol.set_pbc(True)
+        optimiser = FIRE2(mol, use_abc=True, maxstep=0.1, dt=0.1)
+        cf = optimiser.run(force_threshold, optimise_step)
+        if not cf:
+            warnings.warn(
+                "Optimisation not converged! "
+                f"Try increasing optimisation steps (currectly {optimise_step}) "
+                f"or relaxing threshold (correctly {force_threshold})."
+            )
+        return mol.symbols, mol.positions
 
     def cartesian2smiles(
         self,

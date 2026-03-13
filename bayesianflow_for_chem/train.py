@@ -13,10 +13,18 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from lightning import LightningModule
 from .model import ChemBFN, MLP
 from .scorer import Scorer
-from .geom import EGNN
+from .geom import PAINN, loss_calc
 
 DEFAULT_MODEL_HPARAM = {"lr": 5e-5, "lr_warmup_step": 1000, "uncond_prob": 0.2}
-DEFAULT_GNN_HPARAM = {"lr": 1e-4, "lr_warmup_step": 1000}
+DEFAULT_GNN_HPARAM = {
+    "lr_scheduler_factor": 0.5,
+    "lr_scheduler_patience": 50,
+    "lr_scheduler_interval": "epoch",  # can be "step" as well
+    "lr_scheduler_frequency": 1,
+    "lr_warmup_step": 10000,
+    "max_lr": 1e-3,
+    "ema_alpha": 0.1,  # EMA alpha value
+}
 DEFAULT_REGRESSOR_HPARAM = {
     "mode": (_mode := "regression"),
     "lr_scheduler_factor": 0.8,
@@ -344,46 +352,95 @@ class GNN(LightningModule):
 
     def __init__(
         self,
-        model: ChemBFN,
-        gnn: EGNN,
+        model: PAINN,
         hparam: Optional[Dict[str, Union[int, float]]] = None,
     ) -> None:
         """
         A `~lightning.LightningModule` wrapper of conformer searching model.\n
         This module is used in training stage only.
-        By calling `GNN(...).export_model(YOUR_WORK_DIR)` after training,
-        the models will be saved to `YOUR_WORK_DIR/model.pt`
+        By calling `GNN(...).export_model(YOUR_WORK_DIR)` after training, the model
+        will be saved to `YOUR_WORK_DIR/mmff.pt`.
 
-        :param model: `~bayesianflow_for_chem.model.ChemBFN` instance.
-        :param gnn: `~bayesianflow_for_chem.geom.EGNN` instance.
+        :param model: `~bayesianflow_for_chem.geom.PAINN` instance.
         :param hparam: a `dict` instance of hyperparameters.
                        See `bayesianflow_for_chem.train.DEFAULT_GNN_HPARAM`.
-        :type model: bayesianflow_for_chem.model.ChemBNF
-        :type gnn: bayesianflow_for_chem.geom.EGNN
+        :type model: bayesianflow_for_chem.geom.PAINN
         :type hparam: dict
         """
         super().__init__()
         if hparam is None:
             hparam = DEFAULT_GNN_HPARAM
         self.model = model
-        self.gnn = gnn
-        self.mlp = torch.nn.Identity()
-        self.model.requires_grad_(False)
-        self.mlp.requires_grad_(False)
-        self.save_hyperparameters(hparam, ignore=["model", "gnn"])
+        self.mse_fn = torch.nn.MSELoss(reduction="mean")
+        self.mae_fn = torch.nn.L1Loss(reduction="mean")
+        self.scalar_loss: Optional[float] = None
+        self.val_scalar_loss: Optional[float] = None
+        self.save_hyperparameters(hparam, ignore=["model"])
 
     def training_step(self, batch: Dict[str, Tensor]) -> Tensor:
-        x, z, r, b = batch["token"], batch["Z"], batch["R"], batch["batch"]
+        z, r, b, s = batch["Z"], batch["R"], batch["batch"], batch["scalar"]
         lattice = batch.get("lattice", None)
-        t = torch.rand((x.shape[0], 1, 1), device=x.device)
-        m = self.model.inference(x, self.mlp)
-        loss = self.gnn.continuous_time_loss(z, r, b, m, t, lattice)
-        self.log("continuous_time_loss", loss.item())
-        return loss
+        label = {"scalar": s}
+        n_b = b.shape[0]
+        if "vector" in batch:
+            label["vector"] = batch["vector"]
+        y, dy = self.model.forward(z, r, b, lattice)
+        loss_dict = loss_calc({"scalar": y, "vector": dy}, label, self.mse_fn)
+        scalar_loss = loss_dict["scalar"]
+        self.log("scalar_loss", scalar_loss.item(), batch_size=n_b)
+        if "vector" in loss_dict:
+            vector_loss = loss_dict["vector"]
+            self.log("vector_loss", vector_loss.item(), batch_size=n_b)
+            b = 1 - (a := self.hparams.ema_alpha)
+            if self.scalar_loss is None:
+                self.scalar_loss = scalar_loss.item()
+            else:
+                scalar_loss = a * scalar_loss + b * self.scalar_loss
+                self.scalar_loss = scalar_loss.item()
+            return 0.05 * scalar_loss + 0.95 * vector_loss
+        return scalar_loss
 
-    def configure_optimizers(self) -> Dict[str, op.AdamW]:
-        optimizer = op.AdamW(self.parameters(), lr=1e-8, weight_decay=0.01)
-        return {"optimizer": optimizer}
+    def validation_step(self, batch: Dict[str, Tensor]) -> None:
+        z, r, b, s = batch["Z"], batch["R"], batch["batch"], batch["scalar"]
+        lattice = batch.get("lattice", None)
+        label = {"scalar": s}
+        n_b = b.shape[0]
+        if "vector" in batch:
+            label["vector"] = batch["vector"]
+        with torch.set_grad_enabled(True):
+            y, dy = self.model.forward(z, r, b, lattice)
+            val_loss_dict = loss_calc({"scalar": y, "vector": dy}, label, self.mae_fn)
+            val_scalar_loss = val_loss_dict["scalar"].item()
+            if "vector" in val_loss_dict:
+                b = 1 - (a := self.hparams.ema_alpha)
+                val_vector_loss = val_loss_dict["vector"].item()
+                if self.val_scalar_loss is None:
+                    self.val_scalar_loss = val_scalar_loss
+                else:
+                    val_scalar_loss = a * val_scalar_loss + b * self.val_scalar_loss
+                    self.val_scalar_loss = val_scalar_loss
+                val_loss = 0.05 * val_scalar_loss + 0.95 * val_vector_loss
+                self.log("val_loss", val_loss, batch_size=n_b)
+            else:
+                self.log("val_loss", val_loss_dict["scalar"].item(), batch_size=n_b)
+
+    def configure_optimizers(self) -> Dict[str, Union[op.AdamW, Dict]]:
+        optimizer = op.AdamW(self.parameters(), 1e-8, amsgrad=False)
+        scheduler = ReduceLROnPlateau(
+            optimizer,
+            "min",
+            self.hparams.lr_scheduler_factor,
+            self.hparams.lr_scheduler_patience,
+            min_lr=1e-8,
+        )
+        lr_scheduler_config = {
+            "scheduler": scheduler,
+            "interval": self.hparams.lr_scheduler_interval,
+            "monitor": "val_loss",
+            "frequency": self.hparams.lr_scheduler_frequency,
+            "strict": True,
+        }
+        return {"optimizer": optimizer, "lr_scheduler": lr_scheduler_config}
 
     def optimizer_step(self, *args, **kwargs) -> None:
         optimizer: op.AdamW = kwargs["optimizer"] if "optimizer" in kwargs else args[2]
@@ -392,7 +449,7 @@ class GNN(LightningModule):
             lr_scale = int(self.trainer.global_step + 1) / self.hparams.lr_warmup_step
             lr_scale = min(1.0, lr_scale)
             for pg in optimizer.param_groups:
-                pg["lr"] = lr_scale * self.hparams.lr
+                pg["lr"] = lr_scale * self.hparams.max_lr
         super().optimizer_step(*args, **kwargs)
         optimizer.zero_grad(set_to_none=True)
 
@@ -408,6 +465,6 @@ class GNN(LightningModule):
         if not workdir.exists():
             workdir.mkdir()
         torch.save(
-            {"nn": self.gnn.state_dict(), "hparam": self.gnn.hparam},
-            workdir / "model.pt",
+            {"nn": self.model.state_dict(), "hparam": self.model.hparam},
+            workdir / "mmff.pt",
         )

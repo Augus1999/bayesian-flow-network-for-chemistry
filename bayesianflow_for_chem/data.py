@@ -6,12 +6,13 @@ Tokenise SMILES/SAFE/SELFIES/FASTA strings.
 import os
 import re
 from pathlib import Path
-from typing import Any, List, Dict, Optional, Union, Callable
+from typing import Any, List, Dict, Union, Callable
 import torch
 import torch.nn.functional as F
+from ase import Atoms
+from ase.io import read
 from torch import Tensor
 from torch.utils.data import Dataset
-from ase.io import read
 
 __filedir__ = Path(__file__).parent
 
@@ -175,44 +176,51 @@ def collate(batch: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
 
 def graph_collate(batch: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
     """
-    Padding the graph data in one batch into the same size.\n
+    Collating the graph data into one batch.\n
     Should be passed to `~torch.utils.data.DataLoader`
     as `DataLoader(collate_fn=graph_collate, ...)`.
 
     :param batch: a list of data (one batch)
     :type batch: list
     :return: batched {
-                        "token": token,
                         "Z": atmoic numbers,
                         "R": nuclear coordinates,
                         "batch": batching mask,
                         "lattice": unit cell vectors (optional)
+                        "scalar": energies (optional),
+                        "vector": atomic forces (optional),
                         }
     :rtype: dict
     """
-    out_dict = collate(batch)
+    scalars, vectors = [], []
     charges, positions, mask, lattice = [], [], [], []
     for item in batch:
         charges.append(item["Z"])
-        if "R" in item:
-            positions.append(item["R"])
+        positions.append(item["R"])
+        if "scalar" in item:
+            scalars.append(item["scalar"].unsqueeze(0))
+        if "vector" in item:
+            vectors.append(item["vector"])
         if "lattice" in item:
             lattice.append(item["lattice"][None, ...])
-    charges = torch.cat(charges, dim=0)[None, ...]
+    charges = torch.cat(charges, 0)[None, ...]
+    positions = torch.cat(positions, 0)[None, ...]
     n_total = charges.shape[1]
     i = 0
     for item in batch:
         n = item["Z"].shape[0]
         batch = torch.ones(1, n)
         p1, p2 = torch.zeros(1, i), torch.zeros(1, n_total - n - i)
-        mask.append(torch.cat([p1, batch, p2], dim=-1))
+        mask.append(torch.cat([p1, batch, p2], -1))
         i += n
-    mask = torch.cat(mask, dim=0)[..., None]
-    out_dict.update({"Z": charges, "batch": mask})
-    if positions:
-        out_dict["R"] = torch.cat(positions, dim=0)[None, ...]
+    mask = torch.cat(mask, 0)[..., None]
+    out_dict = {"Z": charges, "R": positions, "batch": mask}
     if lattice:
-        out_dict["lattice"] = torch.cat(lattice, dim=0)
+        out_dict["lattice"] = torch.cat(lattice, 0)
+    if scalars:
+        out_dict["scalar"] = torch.cat(scalars, 0)
+    if vectors:
+        out_dict["vector"] = torch.cat(vectors, 0).unsqueeze(0)
     return out_dict
 
 
@@ -297,7 +305,6 @@ class XYZData(Dataset):
         super().__init__()
         self.data = read(file, index=":")
         self.use_pbc = use_pbc
-        self.smi_keys: Union[str, List[str]] = "all"
 
     def __len__(self) -> int:
         return len(self.data)
@@ -308,49 +315,27 @@ class XYZData(Dataset):
         d = self.data[idx]
         z = torch.tensor(d.numbers, dtype=torch.long)
         r = torch.tensor(d.positions, dtype=torch.float32)
-        smi = []
-        for key, item in d.info.items():
-            if isinstance(key, str) and "smiles" in (_key := key.lower()):
-                smi.append(item.replace(" ", ""))
-                if self.smi_keys != "all":
-                    if _key not in self.smi_keys:
-                        smi.pop()
-        smi = ".".join(smi)
-        assert len(smi) != 0, "Could not find an associated SMILES string!"
-        token = smiles2token(smi)
-        data_dict = {"token": token, "Z": z, "R": r}
+        data_dict = {"Z": z, "R": r}
         lattice = torch.tensor(d.cell.tolist(), dtype=torch.float32)
         if lattice.abs().sum() > 0:
             pbc = torch.tensor(d.pbc, dtype=torch.float32)
             if pbc.sum() > 0 and self.use_pbc:
                 # mask the non-periodic direction(s)
                 data_dict["lattice"] = lattice * pbc[:, None]
+        data_dict.update(self._mapping(d))
         return data_dict
 
-    def set_smiles_keys(self, smi_keys: Optional[List[str]] = None) -> None:
-        """
-        Pass a list of wanted SMILES keys to be selected in the dataset.
-
-        e.g.
-        ```python
-        from bayesianflow_for_chem.data import XYZData
-
-
-        dataset = XYZData(...)
-        dataset.set_smiles_keys(["reactant_smiles", "reagent_smiles"])
-        ```
-
-        :param smi_keys: a list of wanted SMILES keys;
-                         all keys will be used if `None` is given;
-                         default value is `None`
-        :type smi_keys: list | None
-        :return:
-        :rtype: None
-        """
-        if smi_keys is None:
-            return
-        assert isinstance(smi_keys, list)
-        self.smi_keys = [i.lower() for i in smi_keys]
+    @staticmethod
+    def _mapping(atoms: Atoms) -> Dict[str, Tensor]:
+        label: Dict[str, Tensor] = {}
+        results = getattr(atoms.calc, "results", {})
+        if "energy" in results:
+            energy = torch.tensor([atoms.get_total_energy()], dtype=torch.float32)
+            label["scalar"] = energy  # shape: (1,)
+        if "forces" in results:
+            forces = torch.tensor(atoms.get_forces(), dtype=torch.float32)
+            label["vector"] = forces  # shape: (n_a, 3)
+        return label
 
 
 if __name__ == "__main__":

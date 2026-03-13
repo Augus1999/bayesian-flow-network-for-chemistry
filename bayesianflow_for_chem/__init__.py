@@ -8,16 +8,15 @@ from typing import TYPE_CHECKING, List, Any
 
 
 _models = ["ChemBFN", "MLP", "EnsembleChemBFN"]
-_geometry = ["EGNN"]
-_submodules = ["data", "tool", "train", "scorer", "spectra"]
+_submodules = ["data", "tool", "geom", "train", "scorer", "spectra"]
 
 __all__ = [
     "MLP",
     "ChemBFN",
     "EnsembleChemBFN",
-    "EGNN",
     "data",
     "tool",
+    "geom",
     "train",
     "scorer",
     "spectra",
@@ -36,9 +35,6 @@ def __getattr__(name: str) -> Any:
     elif name in _models:
         _imported_models = _importlib.import_module("bayesianflow_for_chem.model")
         return _imported_models.__dict__[name]
-    elif name in _geometry:
-        _imported_models = _importlib.import_module("bayesianflow_for_chem.geom")
-        return _imported_models.__dict__[name]
     else:
         try:
             return globals()[name]
@@ -49,11 +45,10 @@ def __getattr__(name: str) -> Any:
 
 
 if TYPE_CHECKING:
-    from . import data, tool, train, scorer, spectra
+    from . import data, tool, geom, train, scorer, spectra
     from .model import ChemBFN, MLP, EnsembleChemBFN
-    from .geom import EGNN
 
-assert set(_models + _geometry + _submodules) == set(__all__)
+assert set(_models + _submodules) == set(__all__)
 
 
 def main() -> None:
