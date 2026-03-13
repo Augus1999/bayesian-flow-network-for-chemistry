@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from lightning import LightningModule
 from .model import ChemBFN, MLP
 from .scorer import Scorer
-from .geom import PAINN, loss_calc
+from .mlff import PAINN, loss_calc
 
 DEFAULT_MODEL_HPARAM = {"lr": 5e-5, "lr_warmup_step": 1000, "uncond_prob": 0.2}
 DEFAULT_GNN_HPARAM = {
@@ -359,12 +359,12 @@ class GNN(LightningModule):
         A `~lightning.LightningModule` wrapper of conformer searching model.\n
         This module is used in training stage only.
         By calling `GNN(...).export_model(YOUR_WORK_DIR)` after training, the model
-        will be saved to `YOUR_WORK_DIR/mmff.pt`.
+        will be saved to `YOUR_WORK_DIR/mlff.pt`.
 
-        :param model: `~bayesianflow_for_chem.geom.PAINN` instance.
+        :param model: `~bayesianflow_for_chem.mlff.PAINN` instance.
         :param hparam: a `dict` instance of hyperparameters.
                        See `bayesianflow_for_chem.train.DEFAULT_GNN_HPARAM`.
-        :type model: bayesianflow_for_chem.geom.PAINN
+        :type model: bayesianflow_for_chem.mlff.PAINN
         :type hparam: dict
         """
         super().__init__()
@@ -466,5 +466,5 @@ class GNN(LightningModule):
             workdir.mkdir()
         torch.save(
             {"nn": self.model.state_dict(), "hparam": self.model.hparam},
-            workdir / "mmff.pt",
+            workdir / "mlff.pt",
         )

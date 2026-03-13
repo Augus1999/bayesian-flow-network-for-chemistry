@@ -118,7 +118,7 @@ _class_ bayesianflow_for_chem.__EnsembleChemBFN__(_base_model_path_, _lora_paths
 
 ---
 
-_class_ bayesianflow_for_chem.geom.__PAINN__(_num_embed=120_, _channel=128_, _cutoff_radius=5.0_, _num_kernel=64_, _max_neighbour=15_, _num_layer=3_)
+_class_ bayesianflow_for_chem.mlff.__PAINN__(_num_embed=120_, _channel=128_, _cutoff_radius=5.0_, _num_kernel=64_, _max_neighbour=15_, _num_layer=3_)
 
 &nbsp;&nbsp;&nbsp; PAINN representation.
 
@@ -214,7 +214,7 @@ _class_ bayesianflow_for_chem.tool.__GeometryConverter__
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Guess the 3D gemoetry of the SMILES via conformer search.
 
-&nbsp;&nbsp;&nbsp; __smiles2certesian2__(_smiles_, _mmff_file_, _optimise_step=50_, _force_threshold=0.05_, _lattice=None_, _device=None_) &#8594; tuple
+&nbsp;&nbsp;&nbsp; __smiles2certesian2__(_smiles_, _mlff_file_, _optimise_step=50_, _force_threshold=0.05_, _lattice=None_, _device=None_) &#8594; tuple
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Conformer searching fully performed by ML model.
 
@@ -224,7 +224,7 @@ _class_ bayesianflow_for_chem.tool.__GeometryConverter__
 
 ---
 
-_class_ bayesianflow_for_chem.geom.__MMFF__(_model_file_name_, _scale=1.0_, _device=None_)
+_class_ bayesianflow_for_chem.mlff.__MLFF__(_model_file_name_, _scale=1.0_, _device=None_)
 
 &nbsp;&nbsp;&nbsp; ASE calculator class wrapper of PAINN model.
 

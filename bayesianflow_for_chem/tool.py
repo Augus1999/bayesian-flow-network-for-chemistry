@@ -27,7 +27,7 @@ from rdkit.Chem import (
 )
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from .data import VOCAB_KEYS
-from .geom import MMFF
+from .mlff import MLFF
 from .model import ChemBFN, MLP, EnsembleChemBFN, reset_lora_
 
 
@@ -689,7 +689,7 @@ class GeometryConverter:
     def smiles2cartesian2(
         self,
         smiles: str,
-        mmff_file: Union[str, Path],
+        mlff_file: Union[str, Path],
         optimise_step: int = 50,
         force_threshold: float = 0.05,
         lattice: Union[List, np.ndarray, None] = None,
@@ -699,14 +699,14 @@ class GeometryConverter:
         Conformer searching fully performed by ML model.
 
         :param smiles: SMILES string
-        :param mmff_file: MMFF model file <file>
+        :param mlff_file: MLFF model file <file>
         :param optimise_step: number of optimisation steps
         :param force_threshold: Convergence criterion of the forces on atoms
         :param lattice: unit cell vectors if needed;
                         default value is `None`;     shape: (3, 3)
         :param device: hardware accelerator
         :type smiles: str
-        :type mmff_file: str | pathlib.Path
+        :type mlff_file: str | pathlib.Path
         :type optimise_step: int
         :type force_threshold: float
         :type lattice: numpy.ndarray | list | None
@@ -716,9 +716,9 @@ class GeometryConverter:
         :rtype: tuple
         """
         device = _find_device() if device is None else device
-        mmff = MMFF(mmff_file, device=device)
+        mlff = MLFF(mlff_file, device=device)
         symbols, positions = self.smiles2cartesian(smiles, 5, "UFF")
-        mol = Atoms(symbols=symbols, positions=positions, calculator=mmff)
+        mol = Atoms(symbols=symbols, positions=positions, calculator=mlff)
         if lattice is not None:
             mol.set_cell(lattice)
             mol.set_pbc(True)
