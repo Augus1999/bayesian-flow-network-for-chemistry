@@ -17,6 +17,8 @@ $ python run_zinc250k.py --datadir={YOUR_ZINC250K_DATASET_FOLDER} --train_mode={
 
 You can switch to the SELFIES version by using flag `--version=selfies`, but the package `selfies` is required.
 
+* To train a MLFF, see [train_mlff.py](./train_mlff.py) as an example.
+
 
 ## JIT version _v.s._ AOT version
 

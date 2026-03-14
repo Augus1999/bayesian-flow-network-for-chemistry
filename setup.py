@@ -55,6 +55,7 @@ setup(
     packages=["bayesianflow_for_chem", "bayesianflow_for_chem._data"],
     python_requires=">=3.11",
     install_requires=[
+        "ase>=3.25.0",
         "rdkit>=2025.3.5",
         "torch>=2.8.0",
         "torchao>=0.12",

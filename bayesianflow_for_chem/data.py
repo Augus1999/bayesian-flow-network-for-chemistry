@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, List, Dict, Union, Callable
 import torch
 import torch.nn.functional as F
+from ase import Atoms
+from ase.io import read
 from torch import Tensor
 from torch.utils.data import Dataset
 
@@ -172,6 +174,56 @@ def collate(batch: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
     return out_dict
 
 
+def graph_collate(batch: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
+    """
+    Collating the graph data into one batch.\n
+    Should be passed to `~torch.utils.data.DataLoader`
+    as `DataLoader(collate_fn=graph_collate, ...)`.
+
+    :param batch: a list of data (one batch)
+    :type batch: list
+    :return: batched {
+                        "Z": atmoic numbers,
+                        "R": nuclear coordinates,
+                        "batch": batching mask,
+                        "lattice": unit cell vectors (optional)
+                        "scalar": energies (optional),
+                        "vector": atomic forces (optional),
+                        }
+    :rtype: dict
+    """
+    scalars, vectors = [], []
+    charges, positions, mask, lattice = [], [], [], []
+    for item in batch:
+        charges.append(item["Z"])
+        positions.append(item["R"])
+        if "scalar" in item:
+            scalars.append(item["scalar"].unsqueeze(0))
+        if "vector" in item:
+            vectors.append(item["vector"])
+        if "lattice" in item:
+            lattice.append(item["lattice"][None, ...])
+    charges = torch.cat(charges, 0)[None, ...]
+    positions = torch.cat(positions, 0)[None, ...]
+    n_total = charges.shape[1]
+    i = 0
+    for item in batch:
+        n = item["Z"].shape[0]
+        batch = torch.ones(1, n)
+        p1, p2 = torch.zeros(1, i), torch.zeros(1, n_total - n - i)
+        mask.append(torch.cat([p1, batch, p2], -1))
+        i += n
+    mask = torch.cat(mask, 0)[..., None]
+    out_dict = {"Z": charges, "R": positions, "batch": mask}
+    if lattice:
+        out_dict["lattice"] = torch.cat(lattice, 0)
+    if scalars:
+        out_dict["scalar"] = torch.cat(scalars, 0)
+    if vectors:
+        out_dict["vector"] = torch.cat(vectors, 0).unsqueeze(0)
+    return out_dict
+
+
 class CSVData(Dataset):
     """
     Customisable CSV dataset class.
@@ -234,6 +286,56 @@ class CSVData(Dataset):
         :rtype: None
         """
         self.mapping = mapping
+
+
+class XYZData(Dataset):
+    """
+    XYZ dataset class.
+    """
+
+    def __init__(self, file: Union[str, Path], use_pbc: bool = False) -> None:
+        """
+        Define dataset stored in extended-XYZ file.
+
+        :param file: dataset file name <file>
+        :param use_pbc: whether to use PBC
+        :type file: str | pathlib.Path
+        :type use_pbc: bool
+        """
+        super().__init__()
+        self.data = read(file, index=":")
+        self.use_pbc = use_pbc
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, idx: Union[int, Tensor]) -> Dict[str, Tensor]:
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        d = self.data[idx]
+        z = torch.tensor(d.numbers, dtype=torch.long)
+        r = torch.tensor(d.positions, dtype=torch.float32)
+        data_dict = {"Z": z, "R": r}
+        lattice = torch.tensor(d.cell.tolist(), dtype=torch.float32)
+        if lattice.abs().sum() > 0:
+            pbc = torch.tensor(d.pbc, dtype=torch.float32)
+            if pbc.sum() > 0 and self.use_pbc:
+                # mask the non-periodic direction(s)
+                data_dict["lattice"] = lattice * pbc[:, None]
+        data_dict.update(self._mapping(d))
+        return data_dict
+
+    @staticmethod
+    def _mapping(atoms: Atoms) -> Dict[str, Tensor]:
+        label: Dict[str, Tensor] = {}
+        results = getattr(atoms.calc, "results", {})
+        if "energy" in results:
+            energy = torch.tensor([atoms.get_total_energy()], dtype=torch.float32)
+            label["scalar"] = energy  # shape: (1,)
+        if "forces" in results:
+            forces = torch.tensor(atoms.get_forces(), dtype=torch.float32)
+            label["vector"] = forces  # shape: (n_a, 3)
+        return label
 
 
 if __name__ == "__main__":

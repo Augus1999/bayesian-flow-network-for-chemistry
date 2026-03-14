@@ -12,6 +12,8 @@ import torch
 import numpy as np
 from torch import Tensor, softmax
 from torch.utils.data import DataLoader
+from ase import Atoms
+from ase.optimize import FIRE2
 from rdkit.Chem import (
     rdDetermineBonds,
     AllChem,
@@ -25,6 +27,7 @@ from rdkit.Chem import (
 )
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from .data import VOCAB_KEYS
+from .mlff import MLFF
 from .model import ChemBFN, MLP, EnsembleChemBFN, reset_lora_
 
 
@@ -60,7 +63,7 @@ def _parse_and_assert_param(
 def _map_model_to_device(
     model: Union[ChemBFN, EnsembleChemBFN, MLP, torch.fx.GraphModule],
     device: Union[str, torch.device],
-):
+) -> Union[ChemBFN, EnsembleChemBFN, MLP, torch.fx.GraphModule]:
     if isinstance(model, torch.fx.GraphModule):
         return model.to(device)
     return model.to(device).eval()
@@ -598,6 +601,7 @@ class GeometryConverter:
         rdkit_ff_type: Literal["MMFF", "UFF"] = "MMFF",
         refine_with_crest: bool = False,
         spin: float = 0.0,
+        return_atomic_number: bool = False,
     ) -> Tuple[List[str], np.ndarray]:
         """
         Guess the 3D geometry from SMILES string via conformer search.
@@ -607,11 +611,13 @@ class GeometryConverter:
         :param rdkit_ff_type: force field type chosen in `'MMFF'` and `'UFF'`
         :param refine_with_crest: find the best conformer via CREST
         :param spin: total spin; only required when `refine_with_crest=True`
+        :param return_atomic_number: whether to return atomic numbers instead of symbols
         :type smiles: str
         :type num_conformers: int
         :type rdkit_ff_type: str
         :type refine_with_crest: bool
         :type spin: float
+        :type return_atomic_number: bool
         :return: atomic symbols \n
                  cartesian coordinates;  shape: (n_a, 3)
         :rtype: tuple
@@ -630,10 +636,10 @@ class GeometryConverter:
                 raise RuntimeError(
                     "`xTB` is not found! Make sure it is installed and added into the PATH."
                 )
-        mol = MolFromSmiles(smiles)
-        mol = AddHs(mol)
+        mol = AddHs(MolFromSmiles(smiles))
         AllChem.EmbedMultipleConfs(mol, numConfs=num_conformers, params=AllChem.ETKDG())
         symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
+        numbers = [atom.GetSymbol() for atom in mol.GetAtoms()]
         energies = []
         for conf_id in range(num_conformers):
             if rdkit_ff_type.lower() == "mmff":
@@ -678,7 +684,53 @@ class GeometryConverter:
                     symbols, coordinates = np.split(xyz_data, [1], axis=-1)
                     symbols = symbols.flatten().tolist()
                     coordinates = coordinates.astype(np.float64)
-        return symbols, coordinates
+        return numbers if return_atomic_number else symbols, coordinates
+
+    def smiles2cartesian2(
+        self,
+        smiles: str,
+        mlff_file: Union[str, Path],
+        optimise_step: int = 50,
+        force_threshold: float = 0.05,
+        lattice: Union[List, np.ndarray, None] = None,
+        device: Union[str, torch.device, None] = None,
+    ) -> Tuple[List[str], np.ndarray]:
+        """
+        Conformer searching fully performed by ML model.
+
+        :param smiles: SMILES string
+        :param mlff_file: MLFF model file <file>
+        :param optimise_step: number of optimisation steps
+        :param force_threshold: Convergence criterion of the forces on atoms
+        :param lattice: unit cell vectors if needed;
+                        default value is `None`;     shape: (3, 3)
+        :param device: hardware accelerator
+        :type smiles: str
+        :type mlff_file: str | pathlib.Path
+        :type optimise_step: int
+        :type force_threshold: float
+        :type lattice: numpy.ndarray | list | None
+        :type device: str | torch.device | None
+        :return: atomic symbols \n
+                 cartesian coordinates;              shape: (n_a, 3)
+        :rtype: tuple
+        """
+        device = _find_device() if device is None else device
+        mlff = MLFF(mlff_file, device=device)
+        symbols, positions = self.smiles2cartesian(smiles, 5, "UFF")
+        mol = Atoms(symbols=symbols, positions=positions, calculator=mlff)
+        if lattice is not None:
+            mol.set_cell(lattice)
+            mol.set_pbc(True)
+        optimiser = FIRE2(mol, use_abc=True, maxstep=0.1, dt=0.1)
+        cf = optimiser.run(force_threshold, optimise_step)
+        if not cf:
+            warnings.warn(
+                "Optimisation not converged! "
+                f"Try increasing optimisation steps (currectly {optimise_step}) "
+                f"or relaxing threshold (correctly {force_threshold})."
+            )
+        return mol.symbols, mol.positions
 
     def cartesian2smiles(
         self,

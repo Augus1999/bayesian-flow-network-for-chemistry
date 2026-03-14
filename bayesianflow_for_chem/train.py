@@ -13,8 +13,18 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from lightning import LightningModule
 from .model import ChemBFN, MLP
 from .scorer import Scorer
+from .mlff import PAINN, loss_calc
 
 DEFAULT_MODEL_HPARAM = {"lr": 5e-5, "lr_warmup_step": 1000, "uncond_prob": 0.2}
+DEFAULT_GNN_HPARAM = {
+    "lr_scheduler_factor": 0.5,
+    "lr_scheduler_patience": 50,
+    "lr_scheduler_interval": "epoch",  # can be "step" as well
+    "lr_scheduler_frequency": 1,
+    "lr_warmup_step": 10000,
+    "max_lr": 1e-3,
+    "ema_alpha": 0.1,  # EMA alpha value
+}
 DEFAULT_REGRESSOR_HPARAM = {
     "mode": (_mode := "regression"),
     "lr_scheduler_factor": 0.8,
@@ -23,6 +33,8 @@ DEFAULT_REGRESSOR_HPARAM = {
     "max_lr": 1e-4,
     "freeze": False,
 }
+
+_LrSchedulerConfigType = Dict[str, Union[str, int, bool, ReduceLROnPlateau]]
 
 
 def _mark_only_lora_as_trainable(model: ChemBFN) -> None:
@@ -276,7 +288,9 @@ class Regressor(LightningModule):
             val_loss = (z * y_mask - y).abs().sum() / y_mask.sum()
         self.log("val_loss", val_loss.item())
 
-    def configure_optimizers(self) -> Dict:
+    def configure_optimizers(
+        self,
+    ) -> Dict[str, Union[op.AdamW, _LrSchedulerConfigType]]:
         optimizer = op.AdamW(self.parameters(), lr=1e-7, weight_decay=0.01)
         lr_scheduler_config = {
             "scheduler": ReduceLROnPlateau(
@@ -333,3 +347,159 @@ class Regressor(LightningModule):
                     {"nn": self.model.state_dict(), "hparam": self.model.hparam},
                     workdir / "model_ft.pt",
                 )
+
+
+class GNN(LightningModule):
+    """
+    GNN class for training only.
+    """
+
+    def __init__(
+        self,
+        model: PAINN,
+        hparam: Optional[Dict[str, Union[str, int, float]]] = None,
+    ) -> None:
+        """
+        A `~lightning.LightningModule` wrapper of conformer searching model.\n
+        This module is used in training stage only.
+        By calling `GNN(...).export_model(YOUR_WORK_DIR)` after training, the model
+        will be saved to `YOUR_WORK_DIR/mlff.pt`.
+
+        :param model: `~bayesianflow_for_chem.mlff.PAINN` instance.
+        :param hparam: a `dict` instance of hyperparameters.
+                       See `bayesianflow_for_chem.train.DEFAULT_GNN_HPARAM`.
+        :type model: bayesianflow_for_chem.mlff.PAINN
+        :type hparam: dict
+        """
+        super().__init__()
+        if hparam is None:
+            hparam = DEFAULT_GNN_HPARAM
+        self.model = model
+        self.mse_fn = torch.nn.MSELoss(reduction="mean")
+        self.mae_fn = torch.nn.L1Loss(reduction="mean")
+        self.scalar_loss: Optional[float] = None
+        self.val_scalar_loss: Optional[float] = None
+        self.save_hyperparameters(hparam, ignore=["model"])
+
+    @staticmethod
+    def _prep_data(
+        batch: Dict[str, Tensor],
+    ) -> Tuple[Tensor, Tensor, Tensor, Optional[Tensor], Dict[str, Tensor], int]:
+        z, r, b, s = batch["Z"], batch["R"], batch["batch"], batch["scalar"]
+        lattice = batch.get("lattice", None)
+        label = {"scalar": s}
+        n_b = b.shape[0]
+        if "vector" in batch:
+            label["vector"] = batch["vector"]
+        return z, r, b, lattice, label, n_b
+
+    def _ema(
+        self, loss_dict: Dict[str, Tensor], mode: Literal["train", "val"], n_b: int
+    ) -> Optional[Tensor]:
+        b = 1 - (a := self.hparams.ema_alpha)
+        scalar_loss = loss_dict["scalar"]
+        vector_loss = loss_dict["vector"]
+        if (
+            getattr(self, (name_ := f"{'' if mode == 'train' else 'val_'}scalar_loss"))
+            is None
+        ):
+            setattr(self, name_, scalar_loss.item())
+        else:
+            scalar_loss = a * scalar_loss + b * getattr(self, name_)
+            setattr(self, name_, scalar_loss.item())
+        loss = 0.05 * scalar_loss + 0.95 * vector_loss
+        if mode == "train":
+            self.log("vector_loss", vector_loss.item(), batch_size=n_b)
+            return loss
+        self.log("val_loss", loss.item(), batch_size=n_b)
+        return None
+
+    def training_step(self, batch: Dict[str, Tensor]) -> Tensor:
+        z, r, b, lattice, label, n_b = self._prep_data(batch)
+        y, dy = self.model.forward(z, r, b, lattice)
+        loss_dict = loss_calc({"scalar": y, "vector": dy}, label, self.mse_fn)
+        scalar_loss = loss_dict["scalar"]
+        self.log("scalar_loss", scalar_loss.item(), batch_size=n_b)
+        if "vector" in loss_dict:
+            return self._ema(loss_dict, "train", n_b)
+        return scalar_loss
+
+    def validation_step(self, batch: Dict[str, Tensor]) -> None:
+        z, r, b, lattice, label, n_b = self._prep_data(batch)
+        with torch.set_grad_enabled(True):
+            y, dy = self.model.forward(z, r, b, lattice)
+            val_loss_dict = loss_calc({"scalar": y, "vector": dy}, label, self.mae_fn)
+            if "vector" in val_loss_dict:
+                self._ema(val_loss_dict, "val", n_b)
+            else:
+                self.log("val_loss", val_loss_dict["scalar"].item(), batch_size=n_b)
+
+    def test_step(self, batch: Dict[str, Tensor]) -> None:
+        z, r, b, lattice, label, n_b = self._prep_data(batch)
+        with torch.set_grad_enabled(True):
+            y, dy = self.model.forward(z, r, b, lattice)
+            test_loss_dict_1 = loss_calc(
+                {"scalar": y, "vector": dy}, label, self.mae_fn
+            )
+            test_loss_dict_2 = loss_calc(
+                {"scalar": y, "vector": dy}, label, self.mse_fn
+            )
+            test_scalar_loss_1 = test_loss_dict_1["scalar"].item()
+            test_scalar_loss_2 = test_loss_dict_2["scalar"].sqrt().item()
+            result_dict = {
+                "scalar MAE": test_scalar_loss_1,
+                "scalar RMSE": test_scalar_loss_2,
+            }
+            if "vector" in test_loss_dict_1:
+                test_vector_loss_1 = test_loss_dict_1["vector"].item()
+                test_vector_loss_2 = test_loss_dict_2["vector"].sqrt().item()
+                result_dict["vector MAE"] = test_vector_loss_1
+                result_dict["vector RMSE"] = test_vector_loss_2
+        self.log_dict(result_dict, batch_size=n_b)
+
+    def configure_optimizers(
+        self,
+    ) -> Dict[str, Union[op.AdamW, _LrSchedulerConfigType]]:
+        optimizer = op.AdamW(self.parameters(), 1e-8, amsgrad=False)
+        scheduler = ReduceLROnPlateau(
+            optimizer,
+            "min",
+            self.hparams.lr_scheduler_factor,
+            self.hparams.lr_scheduler_patience,
+            min_lr=1e-8,
+        )
+        lr_scheduler_config = {
+            "scheduler": scheduler,
+            "interval": self.hparams.lr_scheduler_interval,
+            "monitor": "val_loss",
+            "frequency": self.hparams.lr_scheduler_frequency,
+            "strict": True,
+        }
+        return {"optimizer": optimizer, "lr_scheduler": lr_scheduler_config}
+
+    def optimizer_step(self, *args, **kwargs) -> None:
+        optimizer: op.AdamW = kwargs["optimizer"] if "optimizer" in kwargs else args[2]
+        # warm-up step
+        if self.trainer.global_step < self.hparams.lr_warmup_step:
+            lr_scale = int(self.trainer.global_step + 1) / self.hparams.lr_warmup_step
+            lr_scale = min(1.0, lr_scale)
+            for pg in optimizer.param_groups:
+                pg["lr"] = lr_scale * self.hparams.max_lr
+        super().optimizer_step(*args, **kwargs)
+        optimizer.zero_grad(set_to_none=True)
+
+    def export_model(self, workdir: Path) -> None:
+        """
+        Save the trained model.
+
+        :param workdir: the directory to save the model
+        :type workdir: pathlib.Path
+        :return:
+        :rtype: None
+        """
+        if not workdir.exists():
+            workdir.mkdir()
+        torch.save(
+            {"nn": self.model.state_dict(), "hparam": self.model.hparam},
+            workdir / "mlff.pt",
+        )

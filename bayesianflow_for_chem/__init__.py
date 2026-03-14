@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, List, Any
 
 
 _models = ["ChemBFN", "MLP", "EnsembleChemBFN"]
-_submodules = ["data", "tool", "train", "scorer", "spectra"]
+_submodules = ["data", "tool", "mlff", "train", "scorer", "spectra"]
 
 __all__ = [
     "MLP",
@@ -16,11 +16,12 @@ __all__ = [
     "EnsembleChemBFN",
     "data",
     "tool",
+    "mlff",
     "train",
     "scorer",
     "spectra",
 ]
-__version__ = "2.4.5"
+__version__ = "3.0.0"
 __author__ = "Nianze A. Tao"
 
 
@@ -44,7 +45,7 @@ def __getattr__(name: str) -> Any:
 
 
 if TYPE_CHECKING:
-    from . import data, tool, train, scorer, spectra
+    from . import data, tool, mlff, train, scorer, spectra
     from .model import ChemBFN, MLP, EnsembleChemBFN
 
 assert set(_models + _submodules) == set(__all__)

@@ -1,3 +1,4 @@
+ase>=3.25.0
 rdkit>=2025.3.5
 torch>=2.8.0
 torchao>=0.12

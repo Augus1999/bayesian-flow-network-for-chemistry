@@ -20,6 +20,10 @@ bayesianflow_for_chem.train.__DEFAULT_MODEL_HPARAM__
 
 &nbsp;&nbsp;&nbsp; Default hyperparameters for training a generative model.
 
+bayesianflow_for_chem.train.__DEFAULT_GNN_HPARAM__
+
+&nbsp;&nbsp;&nbsp; Default hyperparameters for training a GNN model for conformer searching.
+
 bayesianflow_for_chem.train.__DEFAULT_REGRESSOR_HPARAM__
 
 &nbsp;&nbsp;&nbsp; Default hyperparameters for training a regression or classification model.
@@ -54,9 +58,19 @@ _class_ bayesianflow_for_chem.data.__CSVData__(_file_)
 
 ---
 
+_class_ bayesianflow_for_chem.data.__XYZData__(_file_, _use_pbc=False_)
+
+&nbsp;&nbsp;&nbsp; Define dataset stored in extended-XYZ file.
+
+---
+
 bayesianflow_for_chem.data.__collate__(_batch_) &#8594; list
 
 &nbsp;&nbsp;&nbsp; Padding the data in one batch into the same size.
+
+bayesianflow_for_chem.data.__graph_collate__(_batch_) &#8594; list
+
+&nbsp;&nbsp;&nbsp; Collating the graph data in one batch.
 
 ### Model
 
@@ -101,6 +115,16 @@ _class_ bayesianflow_for_chem.__EnsembleChemBFN__(_base_model_path_, _lora_paths
 &nbsp;&nbsp;&nbsp; __quantise__(_quantise_method=None_) &#8594; None
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Quantise the submodels.
+
+---
+
+_class_ bayesianflow_for_chem.mlff.__PAINN__(_num_embed=120_, _channel=128_, _cutoff_radius=5.0_, _num_kernel=64_, _max_neighbour=15_, _num_layer=3_)
+
+&nbsp;&nbsp;&nbsp; PAINN representation.
+
+&nbsp;&nbsp;&nbsp; <span style='color: grey'>_classmethod_</span> __from_checkpoint__(_ckpt_) &#8594; Self
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Load model weight from a checkpoint.
 
 ### Scorer
 
@@ -186,13 +210,23 @@ bayesianflow_for_chem.tool.__merge_lora\___(_model_) &#8594; None
 
 _class_ bayesianflow_for_chem.tool.__GeometryConverter__
 
-&nbsp;&nbsp;&nbsp; __smiles2certesian__(_smiles_, _num_conformers_, _rdkit_ff_type="MMFF"_, _refine_with_crest=False_, _spin=0.0_) &#8594; tuple
+&nbsp;&nbsp;&nbsp; __smiles2certesian__(_smiles_, _num_conformers_, _rdkit_ff_type="MMFF"_, _refine_with_crest=False_, _spin=0.0_, _return_atomic_number=False_) &#8594; tuple
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Guess the 3D gemoetry of the SMILES via conformer search.
+
+&nbsp;&nbsp;&nbsp; __smiles2certesian2__(_smiles_, _mlff_file_, _optimise_step=50_, _force_threshold=0.05_, _lattice=None_, _device=None_) &#8594; tuple
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Conformer searching fully performed by ML model.
 
 &nbsp;&nbsp;&nbsp; __cartesian2smiles__(_symbols_, _coordinates_, _charge=0_, _canonical=True_) &#8594; str
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Transform molecular geometry to SMILES string.
+
+---
+
+_class_ bayesianflow_for_chem.mlff.__MLFF__(_model_file_name_, _scale=1.0_, _device=None_)
+
+&nbsp;&nbsp;&nbsp; ASE calculator class wrapper of PAINN model.
 
 ### Training Helper
 
@@ -217,3 +251,14 @@ _class_ bayesianflow_for_chem.train.__Regressor__(_model_, _mlp_, _hparam=DEFAUL
 &nbsp;&nbsp;&nbsp; __export_model__(_workdir_) &#8594; None
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Save the trained model.
+
+---
+
+_class_ bayesianflow_for_chem.train.__GNN__(_model_, _hparam=DEFAULT_GNN_HPARAM_)
+
+&nbsp;&nbsp;&nbsp; A `~lightning.LightningModule` wrapper of conformer searching model used for training.
+
+&nbsp;&nbsp;&nbsp; __export_model__(_workdir_) &#8594; None
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Save the trained model.
+
