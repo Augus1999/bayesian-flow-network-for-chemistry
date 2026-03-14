@@ -34,6 +34,8 @@ DEFAULT_REGRESSOR_HPARAM = {
     "freeze": False,
 }
 
+_LrSchedulerConfigType = Dict[str, Union[str, int, bool, ReduceLROnPlateau]]
+
 
 def _mark_only_lora_as_trainable(model: ChemBFN) -> None:
     # Modified from https://github.com/microsoft/LoRA/blob/main/loralib/utils.py
@@ -286,7 +288,9 @@ class Regressor(LightningModule):
             val_loss = (z * y_mask - y).abs().sum() / y_mask.sum()
         self.log("val_loss", val_loss.item())
 
-    def configure_optimizers(self) -> Dict[str, Union[op.AdamW, Dict]]:
+    def configure_optimizers(
+        self,
+    ) -> Dict[str, Union[op.AdamW, _LrSchedulerConfigType]]:
         optimizer = op.AdamW(self.parameters(), lr=1e-7, weight_decay=0.01)
         lr_scheduler_config = {
             "scheduler": ReduceLROnPlateau(
@@ -353,7 +357,7 @@ class GNN(LightningModule):
     def __init__(
         self,
         model: PAINN,
-        hparam: Optional[Dict[str, Union[int, float]]] = None,
+        hparam: Optional[Dict[str, Union[str, int, float]]] = None,
     ) -> None:
         """
         A `~lightning.LightningModule` wrapper of conformer searching model.\n
@@ -377,54 +381,85 @@ class GNN(LightningModule):
         self.val_scalar_loss: Optional[float] = None
         self.save_hyperparameters(hparam, ignore=["model"])
 
-    def training_step(self, batch: Dict[str, Tensor]) -> Tensor:
+    @staticmethod
+    def _prep_data(
+        batch: Dict[str, Tensor],
+    ) -> Tuple[Tensor, Tensor, Tensor, Optional[Tensor], Dict[str, Tensor], int]:
         z, r, b, s = batch["Z"], batch["R"], batch["batch"], batch["scalar"]
         lattice = batch.get("lattice", None)
         label = {"scalar": s}
         n_b = b.shape[0]
         if "vector" in batch:
             label["vector"] = batch["vector"]
+        return z, r, b, lattice, label, n_b
+
+    def _ema(
+        self, loss_dict: Dict[str, Tensor], mode: Literal["train", "val"], n_b: int
+    ) -> Optional[Tensor]:
+        b = 1 - (a := self.hparams.ema_alpha)
+        scalar_loss = loss_dict["scalar"]
+        vector_loss = loss_dict["vector"]
+        if (
+            getattr(self, (name_ := f"{'' if mode == 'train' else 'val_'}scalar_loss"))
+            is None
+        ):
+            setattr(self, name_, scalar_loss.item())
+        else:
+            scalar_loss = a * scalar_loss + b * getattr(self, name_)
+            setattr(self, name_, scalar_loss.item())
+        loss = 0.05 * scalar_loss + 0.95 * vector_loss
+        if mode == "train":
+            self.log("vector_loss", vector_loss.item(), batch_size=n_b)
+            return loss
+        self.log("val_loss", loss.item(), batch_size=n_b)
+        return None
+
+    def training_step(self, batch: Dict[str, Tensor]) -> Tensor:
+        z, r, b, lattice, label, n_b = self._prep_data(batch)
         y, dy = self.model.forward(z, r, b, lattice)
         loss_dict = loss_calc({"scalar": y, "vector": dy}, label, self.mse_fn)
         scalar_loss = loss_dict["scalar"]
         self.log("scalar_loss", scalar_loss.item(), batch_size=n_b)
         if "vector" in loss_dict:
-            vector_loss = loss_dict["vector"]
-            self.log("vector_loss", vector_loss.item(), batch_size=n_b)
-            b = 1 - (a := self.hparams.ema_alpha)
-            if self.scalar_loss is None:
-                self.scalar_loss = scalar_loss.item()
-            else:
-                scalar_loss = a * scalar_loss + b * self.scalar_loss
-                self.scalar_loss = scalar_loss.item()
-            return 0.05 * scalar_loss + 0.95 * vector_loss
+            return self._ema(loss_dict, "train", n_b)
         return scalar_loss
 
     def validation_step(self, batch: Dict[str, Tensor]) -> None:
-        z, r, b, s = batch["Z"], batch["R"], batch["batch"], batch["scalar"]
-        lattice = batch.get("lattice", None)
-        label = {"scalar": s}
-        n_b = b.shape[0]
-        if "vector" in batch:
-            label["vector"] = batch["vector"]
+        z, r, b, lattice, label, n_b = self._prep_data(batch)
         with torch.set_grad_enabled(True):
             y, dy = self.model.forward(z, r, b, lattice)
             val_loss_dict = loss_calc({"scalar": y, "vector": dy}, label, self.mae_fn)
-            val_scalar_loss = val_loss_dict["scalar"].item()
             if "vector" in val_loss_dict:
-                b = 1 - (a := self.hparams.ema_alpha)
-                val_vector_loss = val_loss_dict["vector"].item()
-                if self.val_scalar_loss is None:
-                    self.val_scalar_loss = val_scalar_loss
-                else:
-                    val_scalar_loss = a * val_scalar_loss + b * self.val_scalar_loss
-                    self.val_scalar_loss = val_scalar_loss
-                val_loss = 0.05 * val_scalar_loss + 0.95 * val_vector_loss
-                self.log("val_loss", val_loss, batch_size=n_b)
+                self._ema(val_loss_dict, "val", n_b)
             else:
                 self.log("val_loss", val_loss_dict["scalar"].item(), batch_size=n_b)
 
-    def configure_optimizers(self) -> Dict[str, Union[op.AdamW, Dict]]:
+    def test_step(self, batch: Dict[str, Tensor]) -> None:
+        z, r, b, lattice, label, n_b = self._prep_data(batch)
+        with torch.set_grad_enabled(True):
+            y, dy = self.model.forward(z, r, b, lattice)
+            test_loss_dict_1 = loss_calc(
+                {"scalar": y, "vector": dy}, label, self.mae_fn
+            )
+            test_loss_dict_2 = loss_calc(
+                {"scalar": y, "vector": dy}, label, self.mse_fn
+            )
+            test_scalar_loss_1 = test_loss_dict_1["scalar"].item()
+            test_scalar_loss_2 = test_loss_dict_2["scalar"].sqrt().item()
+            result_dict = {
+                "scalar MAE": test_scalar_loss_1,
+                "scalar RMSE": test_scalar_loss_2,
+            }
+            if "vector" in test_loss_dict_1:
+                test_vector_loss_1 = test_loss_dict_1["vector"].item()
+                test_vector_loss_2 = test_loss_dict_2["vector"].sqrt().item()
+                result_dict["vector MAE"] = test_vector_loss_1
+                result_dict["vector RMSE"] = test_vector_loss_2
+        self.log_dict(result_dict, batch_size=n_b)
+
+    def configure_optimizers(
+        self,
+    ) -> Dict[str, Union[op.AdamW, _LrSchedulerConfigType]]:
         optimizer = op.AdamW(self.parameters(), 1e-8, amsgrad=False)
         scheduler = ReduceLROnPlateau(
             optimizer,
