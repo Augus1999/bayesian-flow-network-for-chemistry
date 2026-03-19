@@ -19,8 +19,6 @@ DEFAULT_MODEL_HPARAM = {"lr": 5e-5, "lr_warmup_step": 1000, "uncond_prob": 0.2}
 DEFAULT_GNN_HPARAM = {
     "lr_scheduler_factor": 0.5,
     "lr_scheduler_patience": 50,
-    "lr_scheduler_interval": "epoch",  # can be "step" as well
-    "lr_scheduler_frequency": 1,
     "lr_warmup_step": 10000,
     "max_lr": 1e-3,
     "ema_alpha": 0.1,  # EMA alpha value
@@ -470,9 +468,9 @@ class GNN(LightningModule):
         )
         lr_scheduler_config = {
             "scheduler": scheduler,
-            "interval": self.hparams.lr_scheduler_interval,
+            "interval": "epoch",
             "monitor": "val_loss",
-            "frequency": self.hparams.lr_scheduler_frequency,
+            "frequency": 1,
             "strict": True,
         }
         return {"optimizer": optimizer, "lr_scheduler": lr_scheduler_config}

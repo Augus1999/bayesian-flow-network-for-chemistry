@@ -586,6 +586,12 @@ class GeometryConverter:
     Converting between different 2D/3D molecular representations.
     """
 
+    _energy_convert_factor: Dict[str, float] = {
+        "ev": 1.0,
+        "kcal/mol": 0.043361,
+        "hartree": 27.211407953,
+    }
+
     @staticmethod
     def _xyz2mol(symbols: List[str], coordinates: np.ndarray) -> Mol:
         xyz_block = [str(len(symbols)), ""]
@@ -694,6 +700,7 @@ class GeometryConverter:
         force_threshold: float = 0.05,
         lattice: Union[List, np.ndarray, None] = None,
         device: Union[str, torch.device, None] = None,
+        energy_unit: Literal["eV", "Hartree", "kcal/mol"] = "Hartree",
     ) -> Tuple[List[str], np.ndarray]:
         """
         Conformer searching fully performed by ML model.
@@ -705,18 +712,21 @@ class GeometryConverter:
         :param lattice: unit cell vectors if needed;
                         default value is `None`;     shape: (3, 3)
         :param device: hardware accelerator
+        :param energy_unit: energy unit of MLFF
         :type smiles: str
         :type mlff_file: str | pathlib.Path
         :type optimise_step: int
         :type force_threshold: float
         :type lattice: numpy.ndarray | list | None
         :type device: str | torch.device | None
+        :type energy_unit: str
         :return: atomic symbols \n
                  cartesian coordinates;              shape: (n_a, 3)
         :rtype: tuple
         """
+        _scale = self._energy_convert_factor[energy_unit.lower()]
         device = _find_device() if device is None else device
-        mlff = MLFF(mlff_file, device=device)
+        mlff = MLFF(mlff_file, _scale, device)
         symbols, positions = self.smiles2cartesian(smiles, 5, "UFF")
         mol = Atoms(symbols=symbols, positions=positions, calculator=mlff)
         if lattice is not None:

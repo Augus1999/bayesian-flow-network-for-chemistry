@@ -20,11 +20,8 @@ workdir = cwd / "ckpt/coll"
 logdir = cwd / "logs"
 max_epochs = 10000
 lightning_model_hparam = {
-    "model_unit": "eV",
     "lr_scheduler_factor": 0.5,
     "lr_scheduler_patience": 50,
-    "lr_scheduler_interval": "epoch",  # can also be "step"
-    "lr_scheduler_frequency": 1,
     "lr_warmup_step": 10000,
     "max_lr": 1e-3,
     "ema_alpha": 0.1,  # EMA alpha value
@@ -56,6 +53,7 @@ if __name__ == "__main__":
     os.environ["PYTORCH_ALLOC_CONF"] = "max_split_size_mb:64"
     torch.set_float32_matmul_precision("high")
     # Say you have the COLL dataset: https://figshare.com/articles/dataset/COLL_Dataset_v1_2/13289165
+    # COLL is a good test but not a good dataset to create a FF.
     trainset = XYZData(cwd / "dataset/coll/coll_v1.2_AE_train.xyz")
     traindata = DataLoader(trainset, 64, True, collate_fn=graph_collate, num_workers=1)
     valset = XYZData(cwd / "dataset/coll/coll_v1.2_AE_val.xyz")

@@ -368,8 +368,9 @@ class PAINN(nn.Module):
         r.requires_grad_(True)
         if lattice is not None:
             lattice = (lattice[:, None, :, :] * batch[..., None]).sum(0, True)
-        _b = batch.squeeze(-1)
-        batch_mask = (_b.transpose(-2, -1) @ _b == 0)[None, :, :, None]
+        batch_mask = (batch.squeeze(-1).transpose(-2, -1) @ batch.squeeze(-1) == 0)[
+            None, :, :, None
+        ]
         d, vec, idx = self.distance(r, batch_mask, lattice)
         cutoff = self.cutoff(d)
         s = self.embed_a(z) + self.embed_b(z)
@@ -377,17 +378,16 @@ class PAINN(nn.Module):
         for i in range(self.num_layer):
             s, v = self.message_layers[i](s, v, d, vec, idx, cutoff)
             s, v = self.update_layers[i](s, v)
-        y = self.mlp(s)
-        y = (y.repeat(batch.shape[0], 1, 1) * batch).sum(dim=-2)
-        grad_outputs: List[Optional[Tensor]] = [torch.ones_like(y)]
+        s = (self.mlp(s).repeat(batch.shape[0], 1, 1) * batch).sum(-2)
+        grad_outputs: List[Optional[Tensor]] = [torch.ones_like(s)]
         dy = grad(
-            outputs=[y],
+            outputs=[s],
             inputs=[r],
             grad_outputs=grad_outputs,
             retain_graph=self.training,
             create_graph=self.training,
         )[0]
-        return y, -dy
+        return s, -dy
 
     @classmethod
     def from_checkpoint(cls, ckpt: Union[str, Path]) -> Self:

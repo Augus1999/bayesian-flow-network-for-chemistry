@@ -108,7 +108,7 @@ _class_ bayesianflow_for_chem.__MLP__(_size_, _class_input=False_, _dropout=0.0_
 
 ---
 
-_class_ bayesianflow_for_chem.__EnsembleChemBFN__(_base_model_path_, _lora_paths_, _cond_heads_, _adapter_weights_, _semi_autoregressive_flags_)
+_class_ bayesianflow_for_chem.__EnsembleChemBFN__(_base_model_path_, _lora_paths_, _cond_heads_, _adapter_weights=None_, _semi_autoregressive_flags=None_)
 
 &nbsp;&nbsp;&nbsp; Ensemble of ChemBFN models from LoRA checkpoints.
 
@@ -214,7 +214,7 @@ _class_ bayesianflow_for_chem.tool.__GeometryConverter__
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Guess the 3D gemoetry of the SMILES via conformer search.
 
-&nbsp;&nbsp;&nbsp; __smiles2certesian2__(_smiles_, _mlff_file_, _optimise_step=50_, _force_threshold=0.05_, _lattice=None_, _device=None_) &#8594; tuple
+&nbsp;&nbsp;&nbsp; __smiles2certesian2__(_smiles_, _mlff_file_, _optimise_step=50_, _force_threshold=0.05_, _lattice=None_, _device=None_, _energy_unit="Hartree"_) &#8594; tuple
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Conformer searching fully performed by ML model.
 
