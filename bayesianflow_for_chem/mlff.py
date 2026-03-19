@@ -157,8 +157,8 @@ class Distance(nn.Module):
         """
         n_a = r.shape[1]
         k = min(self.k, n_a - 1)
-        vec = r[:, :, None, :] - r[:, None, :, :]
-        vec.masked_fill(batch_mask, torch.inf)  # mask the 'off-diagonal' elements
+        # mask the 'off-diagonal' elements
+        vec = (r[:, :, None, :] - r[:, None, :, :]).masked_fill(batch_mask, torch.inf)
         loop_mask = torch.eye(n_a, device=r.device)[None, ...] == 0
         if lattice is not None:
             # compute distances under periodic boundary conditions

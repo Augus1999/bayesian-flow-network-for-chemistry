@@ -8,7 +8,7 @@ import pytest
 from bayesianflow_for_chem.data import graph_collate
 from bayesianflow_for_chem.mlff import PAINN
 
-
+torch.manual_seed(8964)
 model = PAINN()
 
 
@@ -18,11 +18,21 @@ model = PAINN()
 )
 def test_shape(size):
     batch = []
+    energy, forces = [], []
     for _size in size:
         z = torch.randint(1, 120, (_size,))
         r = torch.randn((_size, 3))
-        batch.append({"Z": z, "R": r})
+        _mol = {"Z": z, "R": r}
+        batch.append(_mol)
+        _batch = graph_collate([_mol])
+        _s, _v = model(_batch["Z"], _batch["R"], _batch["batch"])
+        energy.append(_s)
+        forces.append(_v)
     batch = graph_collate(batch)
     s, v = model(batch["Z"], batch["R"], batch["batch"])
+    energy, forces = torch.cat(energy, 0), torch.cat(forces, 1)
     assert s.shape == (len(size), 1)
     assert v.shape == (1, sum(size), 3)
+    # comparing individually computed results against batched results
+    torch.testing.assert_close(energy, s)
+    torch.testing.assert_close(forces, v)
