@@ -48,7 +48,7 @@ setup(
         "bayesianflow_for_chem": "bayesianflow_for_chem",
         "bayesianflow_for_chem._data": "bayesianflow_for_chem/_data",
     },
-    package_data={"bayesianflow_for_chem": ["./_data/*.txt"]},
+    package_data={"bayesianflow_for_chem": ["./_data/*.txt", "./_data/*.pt"]},
     include_package_data=True,
     author="Nianze A. Tao",
     author_email="tao-nianze@hiroshima-u.ac.jp",

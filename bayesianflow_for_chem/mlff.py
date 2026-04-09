@@ -12,8 +12,16 @@ from ase import Atoms
 from ase.calculators.calculator import Calculator, all_changes
 
 
+_data_path = Path(__file__).parent / "_data"
 _ORBITALS = "1s 2s 2p 3s 3p 4s 3d 4p 5s 4d 5p 6s 4f 5d 6p 7s 5f 6d 7p 6f 7d 7f".split()
 _POSSIBLE_ELECTRONS = {"s": 2, "p": 6, "d": 10, "f": 14}
+
+BUILTIN_MLFF: Dict[str, Dict[str, Union[str, Path]]] = {
+    "COLL-v1.2": {
+        "file": _data_path / "coll_ae_v1.2.pt",
+        "unit": "eV",
+    }
+}
 
 
 def _electron_config(atomic_num: int) -> List[int]:
@@ -130,15 +138,18 @@ class Distance(nn.Module):
     Distance block.
     """
 
-    def __init__(self, max_neighbour: int = 15) -> None:
+    def __init__(self, max_neighbour: int = 15, finite: bool = False) -> None:
         """
         Compute pair-wise distances and normalised vectors.
 
         :param max_neighbour: maximum number of atom-nighbours
+        :param finite: whether to use finite number to mask different molecules
         :type max_neighbour: int
+        :type finite: bool
         """
         super().__init__()
         self.k = max_neighbour
+        self._inf = 100_000 if (self.training or finite) else torch.inf
 
     def forward(
         self, r: Tensor, batch_mask: Tensor, lattice: Optional[Tensor] = None
@@ -158,7 +169,7 @@ class Distance(nn.Module):
         n_a = r.shape[1]
         k = min(self.k, n_a - 1)
         # mask the 'off-diagonal' elements
-        vec = (r[:, :, None, :] - r[:, None, :, :]).masked_fill(batch_mask, torch.inf)
+        vec = (r[:, :, None, :] - r[:, None, :, :]).masked_fill(batch_mask, self._inf)
         loop_mask = torch.eye(n_a, device=r.device)[None, ...] == 0
         if lattice is not None:
             # compute distances under periodic boundary conditions
@@ -191,7 +202,7 @@ class Distance(nn.Module):
         edge = (-d).topk(k, dim=-1)
         d, idxs = -edge.values, edge.indices
         vec_idxs = idxs[..., None].repeat(1, 1, 1, 3)
-        vec = vec.masked_fill(vec == torch.inf, 0).gather(dim=-2, index=vec_idxs)
+        vec = vec.masked_fill(vec == self._inf, 0).gather(dim=-2, index=vec_idxs)
         vec = (vec / d.masked_fill(d == 0, torch.inf)[..., None])[..., None]
         return d, vec, idxs
 

@@ -359,7 +359,7 @@ class GNN(LightningModule):
     ) -> None:
         """
         A `~lightning.LightningModule` wrapper of conformer searching model.\n
-        This module is used in training stage only.
+        This module is used in the training and testing stages only.
         By calling `GNN(...).export_model(YOUR_WORK_DIR)` after training, the model
         will be saved to `YOUR_WORK_DIR/mlff.pt`.
 

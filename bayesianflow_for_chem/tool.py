@@ -700,7 +700,7 @@ class GeometryConverter:
         force_threshold: float = 0.05,
         lattice: Union[List, np.ndarray, None] = None,
         device: Union[str, torch.device, None] = None,
-        energy_unit: Literal["eV", "Hartree", "kcal/mol"] = "Hartree",
+        energy_unit: Literal["eV", "Hartree", "kcal/mol"] = "eV",
     ) -> Tuple[List[str], np.ndarray]:
         """
         Conformer searching fully performed by ML model.

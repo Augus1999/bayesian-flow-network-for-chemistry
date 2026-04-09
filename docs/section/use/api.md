@@ -28,6 +28,10 @@ bayesianflow_for_chem.train.__DEFAULT_REGRESSOR_HPARAM__
 
 &nbsp;&nbsp;&nbsp; Default hyperparameters for training a regression or classification model.
 
+bayesianflow_for_chem.mlff.__BUILTIN_MLFF__
+
+&nbsp;&nbsp;&nbsp; The information of built-in MLFF models.
+
 ### Tokeniser
 
 bayesianflow_for_chem.data.__load_vocab__(_vocab_file_) &#8594; dict
