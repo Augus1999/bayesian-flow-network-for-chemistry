@@ -6,10 +6,12 @@ MLFF model should output a scalar value and a vector.
 import torch
 import pytest
 from bayesianflow_for_chem.data import graph_collate
-from bayesianflow_for_chem.mlff import PAINN
+from bayesianflow_for_chem.mlff import PAINN, BUILTIN_MLFF
+from bayesianflow_for_chem.tool import GeometryConverter
 
 torch.manual_seed(8964)
 model = PAINN()
+gcr = GeometryConverter()
 
 
 @pytest.mark.parametrize(
@@ -36,3 +38,12 @@ def test_shape(size):
     # comparing individually computed results against batched results
     torch.testing.assert_close(energy, s)
     torch.testing.assert_close(forces, v)
+
+
+@pytest.mark.parametrize("smi", ["CCO", "c1ccccc1OCCN", "CCOC1NNC(C)C1F"])
+def test_relax(smi):
+    _model = BUILTIN_MLFF["COLL-v1.2"]
+    z, r = gcr.smiles2cartesian2(
+        smi, _model["file"], 1000, 1.0, energy_unit=_model["unit"]
+    )
+    assert len(z) == len(r)

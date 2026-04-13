@@ -68,3 +68,27 @@ Now `model` is your dyanmically quantised model that can be directly used.
 ## A note for customising tokenisation and vocabulary
 
 Three special tokens (`<pad>`, `<start>`, and `<end>`) should be encluded and they need to have indices of **0**, **1**, and **2**, respectively.
+
+## 3D conformation relaxation w/ MLFF
+
+We have a built-in modified PAINN model to handle this task.
+```python
+from bayesianflow_for_chem.tool import GeometryConverter
+
+gcr = GeometryConverter()
+z, r = gcr.smiles2cartesian2("c1ccccc1OCCN", "YOUR/MODEL/FILE.pt", 1000, 0.05, energy_unit="Hartree")
+# energy_unit should match your trained model!
+xyz = f"{len(z)}\n\n"
+for i, j in enumerate(z):
+    xyz += f"{j} {r[i][0]} {r[i][1]} {r[i][2]}\n"
+with open("result.xyz", "w") as f:
+    f.write(xyz)
+```
+
+You can also access to our pretrained MLFF (we, however, do not guarantee the usability), e.g.,
+```python
+>>> from bayesianflow_for_chem.mlff import BUILTIN_MLFF
+
+>>> model = BUILTIN_MLFF["COLL-v1.2"]
+>>> z, r = gcr.smiles2cartesian2("c1ccccc1OCCN", model["file"], 1000, 0.5, energy_unit=model["unit"])
+```
