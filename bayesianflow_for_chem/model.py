@@ -546,7 +546,7 @@ class ChemBFN(nn.Module):
                  or token embeddings;                        shape: (n_b, n_t, n_f)
         :rtype: torch.Tensor
         """
-        n_b, n_t, _ = x.shape
+        n_b, n_t = x.shape[:2]
         c = self.time_embed(t)
         if y is not None:
             c += y
