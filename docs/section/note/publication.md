@@ -7,4 +7,4 @@ Chemical Information and Modeling_ __2025__, _65_ (3), 1178–1187. DOI: [10.102
 
 ## Preprint
 
-* Tao, N.; Abe, M. Bayesian Flow Is All You Need to Sample Out-of-Distribution Chemical Spaces. 2024; https://arxiv.org/abs/2412.11439.
+* Tao, N.; Abe, M. Sampling Out-of-Distribution Chemical Spaces via Bayesian Flow. 2024; https://arxiv.org/abs/2412.11439.

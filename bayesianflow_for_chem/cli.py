@@ -144,6 +144,7 @@ madmadmadmadmadmadmadmadmadmadmadmadmadmadmad
 """
 
 _END_MESSAGE = r"""
+This is the end of the program, not with a bang but a whimper.
 If you find this project helpful, please cite us:
 1. N. Tao, and M. Abe, J. Chem. Inf. Model., 2025, 65, 1178-1187.
 2. N. Tao, and M. Abe, 2024, arXiv:2412.11439.

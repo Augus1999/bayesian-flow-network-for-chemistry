@@ -130,7 +130,7 @@ We provide a Python class [`CSVData`](./bayesianflow_for_chem/data.py) to handle
 Out-of-distribution generation and fast sampling:
 ```bibtex
 @misc{2024chembfn_ood,
-    title={Bayesian Flow Is All You Need to Sample Out-of-Distribution Chemical Spaces}, 
+    title={Sampling Out-of-Distribution Chemical Spaces via Bayesian Flow}, 
     author={Tao, Nianze and Abe, Minori},
     year={2024},
     eprint={2412.11439},
