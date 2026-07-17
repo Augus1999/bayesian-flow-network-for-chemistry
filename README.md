@@ -22,6 +22,7 @@ ChemBFN provides the state-of-the-art functionalities of
 * Context-guided conditional generation (inpaint)
 * Outstanding out-of-distribution chemical space sampling
 * Fast sampling via ODE solver
+* Pseudo-continuous learning to learn from different datasets
 * Molecular property and activity prediction finetuning
 * Reaction yield prediction finetuning
 
@@ -130,7 +131,7 @@ We provide a Python class [`CSVData`](./bayesianflow_for_chem/data.py) to handle
 
 Out-of-distribution generation and fast sampling:
 ```bibtex
-@article{2024chembfn_ood,
+@article{2026chembfn_ood,
     title={Sampling Out-of-Distribution Chemical Spaces via Bayesian Flow}, 
     author={Tao, Nianze and Abe, Minori},
     journal={Journal of Cheminformatics},
