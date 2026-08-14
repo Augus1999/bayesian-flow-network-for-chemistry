@@ -3,6 +3,7 @@
 """
 CLI utilities.
 """
+
 import os
 import ast
 import json
@@ -31,7 +32,6 @@ from bayesianflow_for_chem.data import (
     CSVData,
 )
 from bayesianflow_for_chem.tool import sample, inpaint, optimise, adjust_lora_
-
 
 _FORBIDDEN_PLUGIN_IMPORTS = (
     "os",
@@ -106,6 +106,7 @@ dataset = "/home/user/project/dataset/qm9.csv"
 molecule_tag = "smiles"
 objective_tag = ["homo", "lumo", "gap"]  # set to empty array [] if it is not needed
 enforce_validity = true  # must be false if SMILES or SAFE is not used
+best_of_k = 1  # use a value larger than 1 to enable explorative training
 logger_name = "wandb"  # or "csv", "tensorboard"
 logger_path = "/home/user/project/logs"
 checkpoint_save_path = "/home/user/project/ckpt"
@@ -147,8 +148,9 @@ _END_MESSAGE = r"""
 This is the end of the program, not with a bang but a whimper.
 If you find this project helpful, please cite us:
 1. N. Tao, and M. Abe, J. Chem. Inf. Model., 2025, 65, 1178-1187.
-2. N. Tao, and M. Abe, 2024, arXiv:2412.11439.
-3. N. Tao, T. Nagai, and M. Abe, CICSJ Bulletin, 2025, 43, 10-14.
+2. N. Tao, T. Nagai, and M. Abe, CICSJ Bulletin, 2025, 43, 10-14.
+3. N. Tao, and M. Abe, J. Cheminform., 2026, in press.
+4. N. Tao, PhD thesis, Hiroshima University, 2026.
 """
 
 _ERROR_MESSAGE = r"""
@@ -492,6 +494,7 @@ class _TrainConfig:
     molecule_tag: str = None
     objective_tag: List[str] = None
     enforce_validity: bool = True
+    best_of_k: int = 1
     logger_name: str = "csv"
     logger_path: str = None
     checkpoint_save_path: str = None
@@ -516,6 +519,7 @@ class _TrainConfig:
             "molecule_tag": str,
             "objective_tag": List[str],
             "enforce_validity": bool,
+            "best_of_k": int,  # added in v3.0.1
             "logger_name": str,
             "logger_path": str,
             "checkpoint_save_path": str,
@@ -629,6 +633,13 @@ class _RuntimeConfig:
                 if not i.lower() in "csv tensorboard wandb".split():
                     self._msg.append(
                         f"{_CHECK_MESSAGE[1]} in {self._fn}: Unknown logger: {i}."
+                    )
+                    self._flag_critical += 1
+            elif key == "best_of_k":
+                if i < 1:
+                    self._msg.append(
+                        f"{_CHECK_MESSAGE[1]} in {self._fn}: "
+                        "best_of_k should be >= 1."
                     )
                     self._flag_critical += 1
             elif key == "sequence_length":
@@ -1174,6 +1185,7 @@ def main_script(version: str) -> None:
         model.model.semi_autoregressive = (
             runtime_config.train_config.semi_autoregressive
         )
+        model.best_of_k = runtime_config.train_config.best_of_k
         # ####### start training #######
         os.environ["PYTORCH_ALLOC_CONF"] = "max_split_size_mb:128"
         if not runtime_config.train_config.dynamic_padding:

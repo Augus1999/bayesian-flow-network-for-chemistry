@@ -3,6 +3,7 @@
 """
 Tokenise SMILES/SAFE/SELFIES/FASTA strings.
 """
+
 import os
 import re
 from pathlib import Path

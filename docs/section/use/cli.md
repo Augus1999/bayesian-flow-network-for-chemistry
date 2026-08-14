@@ -51,6 +51,7 @@ dataset = "/home/user/project/dataset/qm9.csv"
 molecule_tag = "smiles"                  # <-- the header tag under which the molecules are stored
 objective_tag = ["homo", "lumo", "gap"]  # <-- the header tag(s) under which the objective values are stored; set to empty array [] if the model is unconditional
 enforce_validity = true                  # <-- no effect if SMILES or SAFE is not used
+best_of_k = 1                            # <-- apply a value larger than 1 to enable explorative training
 logger_name = "wandb"                    # <-- "wandb", "csv" or "tensorboard"
 logger_path = "/home/user/project/logs"
 checkpoint_save_path = "/home/user/project/ckpt"
@@ -84,6 +85,8 @@ Important notes:
 > `plugin_script` was added in version 2.2.0
 >
 > Since version 2.4.3, you can use `"<pad>"` as a token, _e.g._ `"c1cc<pad><pad>"`, in `guidance_scaffold`
+>
+> `best_of_k` was added in version 3.0.1
 
 #### 4.2. Defining model architecture
 

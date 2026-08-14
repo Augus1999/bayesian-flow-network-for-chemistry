@@ -3,8 +3,9 @@
 """
 Define ChemBFN and regressor models for training.
 """
+
 from pathlib import Path
-from typing import Dict, Tuple, List, Union, Optional, Literal
+from typing import Dict, Tuple, List, Union, Optional, Literal, Callable
 import torch
 import torch.optim as op
 import torch.nn.functional as F
@@ -15,7 +16,12 @@ from .model import ChemBFN, MLP
 from .scorer import Scorer
 from .mlff import PAINN, loss_calc
 
-DEFAULT_MODEL_HPARAM = {"lr": 5e-5, "lr_warmup_step": 1000, "uncond_prob": 0.2}
+DEFAULT_MODEL_HPARAM = {
+    "lr": 5e-5,
+    "lr_warmup_step": 1000,
+    "uncond_prob": 0.2,
+    "best_of_k": 1,  # explorative training best of k
+}
 DEFAULT_GNN_HPARAM = {
     "lr_scheduler_factor": 0.5,
     "lr_scheduler_patience": 50,
@@ -33,6 +39,10 @@ DEFAULT_REGRESSOR_HPARAM = {
 }
 
 _LrSchedulerConfigType = Dict[str, Union[str, int, bool, ReduceLROnPlateau]]
+_BFNCtsLossType = Callable[
+    [Tensor, Tensor, Optional[Tensor], Optional[Tensor], bool, str],
+    Tuple[Tensor, Optional[Tensor]],
+]
 
 
 def _mark_only_lora_as_trainable(model: ChemBFN) -> None:
@@ -48,6 +58,32 @@ def _lora_state_dict(model: ChemBFN) -> Dict[str, Tensor]:
     # We only load 'real' LoRA parameters.
     state_dict = model.state_dict()
     return {k: state_dict[k] for k in state_dict if "lora_" in k}
+
+
+def _xcts_loss(
+    loss_fn: _BFNCtsLossType,
+    x: Tensor,
+    t: Tensor,
+    y: Optional[Tensor],
+    mask: Optional[Tensor] = None,
+    return_output_dist: bool = False,
+    best_of_k: int = 16,
+) -> Tuple[Tensor, Optional[Tensor]]:
+    # explorative continuous time loss
+    n_b, n_t = x.shape[:2]
+    _n_b = n_b * best_of_k
+    x = x[:, None, ...].repeat(1, best_of_k, 1).view(-1, n_t)
+    t = t[:, None, ...].repeat(1, best_of_k, 1, 1).view(_n_b, -1, 1)
+    if torch.is_tensor(y):
+        y = y[:, None, ...].repeat(1, best_of_k, 1, 1).view(_n_b, -1, y.shape[-1])
+    if torch.is_tensor(mask):
+        mask = mask[:, None, ...].repeat(1, best_of_k, 1).view(-1, n_t)
+    cts_loss, e_hat = loss_fn(x, t, y, mask, return_output_dist, "none")
+    best_idx = cts_loss.view(n_b, best_of_k, n_t, -1).sum((-1, -2)).argmin(1)
+    best_idx += torch.arange(n_b, device=x.device) * best_of_k
+    if torch.is_tensor(e_hat):
+        e_hat = e_hat[best_idx]
+    return cts_loss[best_idx].mean(), e_hat
 
 
 def focal_loss(
@@ -141,6 +177,7 @@ class Model(LightningModule):
         if model.lora_enabled:
             _mark_only_lora_as_trainable(self.model)
         self.use_scorer = self.scorer is not None
+        self.best_of_k = hparam.get("best_of_k", 1)
 
     def training_step(self, batch: Dict[str, Tensor]) -> Tensor:
         x = batch["token"]
@@ -156,9 +193,17 @@ class Model(LightningModule):
                 y = y[:, None, :]
             y_mask = F.dropout(torch.ones_like(t), self.hparams.uncond_prob, True, True)
             y_mask = (y_mask != 0).float()
-            loss, p = self.model.cts_loss(x, t, y * y_mask, mask, self.use_scorer)
+            y_ = y * y_mask
+            # loss, p = self.model.cts_loss(x, t, y * y_mask, mask, self.use_scorer)
         else:
-            loss, p = self.model.cts_loss(x, t, None, mask, self.use_scorer)
+            y_ = None
+            # loss, p = self.model.cts_loss(x, t, None, mask, self.use_scorer)
+        if self.best_of_k == 1:
+            loss, p = self.model.cts_loss(x, t, y_, mask, self.use_scorer)
+        else:  # explorative training
+            loss, p = _xcts_loss(
+                self.model.cts_loss, x, t, y_, mask, self.use_scorer, self.best_of_k
+            )
         self.log("continuous_time_loss", loss.item())
         if self.use_scorer:
             scorer_loss = self.scorer.calc_score_loss(p)

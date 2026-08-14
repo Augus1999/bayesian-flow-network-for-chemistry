@@ -139,3 +139,16 @@ Out-of-distribution generation and fast sampling:
     doi={10.1186/s13321-026-01248-9}, 
 }
 ```
+
+PhD thesis:
+```bibtex
+@phdthesis{2026thesis_tao,
+    title={Efficient Multi-Object Optimisation for Molecular Design via Bayesian Flow Networks},
+    author={Nianze Tao},
+    year={2026},
+    month={September},
+    school={Hiroshima University},
+    type={PhD thesis},
+    note={Chemistry program},
+}
+```

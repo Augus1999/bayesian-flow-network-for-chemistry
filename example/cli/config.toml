@@ -19,6 +19,7 @@ dataset = "/home/user/project/dataset/qm9.csv"
 molecule_tag = "smiles"
 objective_tag = ["homo", "lumo", "gap"]  # set to empty array [] if it is not needed
 enforce_validity = true  # must be false if SMILES or SAFE is not used
+best_of_k = 1  # use a value greater than 1 to enable explorative training
 logger_name = "wandb"  # or "csv", "tensorboard"
 logger_path = "/home/user/project/logs"
 checkpoint_save_path = "/home/user/project/ckpt"

@@ -30,6 +30,7 @@ logdir = cwd / "log"
 
 
 model = Model(ChemBFN(VOCAB_COUNT))
+# model.best_of_k = value > 1 to enable explorative training (make sure thy version >= 3.0.1)
 checkpoint_callback = ModelCheckpoint(dirpath=workdir, every_n_train_steps=1000)
 logger = loggers.TensorBoardLogger(logdir, "pretrain")
 trainer = L.Trainer(

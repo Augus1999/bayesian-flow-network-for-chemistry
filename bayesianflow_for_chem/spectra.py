@@ -3,6 +3,7 @@
 """
 Build and analysis spectra.
 """
+
 import numpy as np
 from scipy.stats import wasserstein_distance
 

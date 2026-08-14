@@ -3,9 +3,9 @@
 """
 ChemBFN package.
 """
+
 import importlib as _importlib
 from typing import TYPE_CHECKING, List, Any
-
 
 _models = ["ChemBFN", "MLP", "EnsembleChemBFN"]
 _submodules = ["data", "tool", "mlff", "train", "scorer", "spectra"]

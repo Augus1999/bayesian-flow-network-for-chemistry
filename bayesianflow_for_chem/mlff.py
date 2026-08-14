@@ -3,6 +3,7 @@
 """
 Machine learning force field modules.
 """
+
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional, Union, Callable, Self
 import torch
@@ -10,7 +11,6 @@ from torch import nn, Tensor
 from torch.autograd import grad
 from ase import Atoms
 from ase.calculators.calculator import Calculator, all_changes
-
 
 _data_path = Path(__file__).parent / "_data"
 _ORBITALS = "1s 2s 2p 3s 3p 4s 3d 4p 5s 4d 5p 6s 4f 5d 6p 7s 5f 6d 7p 6f 7d 7f".split()
@@ -45,6 +45,9 @@ def _electron_config(atomic_num: int) -> List[int]:
     if electron_count > atomic_num:
         config[last_idx] -= electron_count - atomic_num
     return config
+
+
+# Energy conservatism is the only good conservatism.
 
 
 def loss_calc(

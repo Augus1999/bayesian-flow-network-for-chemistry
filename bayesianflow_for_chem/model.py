@@ -3,9 +3,10 @@
 """
 Define Bayesian Flow Network for Chemistry (ChemBFN) model.
 """
+
 from pathlib import Path
 from copy import deepcopy
-from typing import List, Tuple, Dict, Optional, Union, Callable, Self
+from typing import List, Tuple, Dict, Optional, Union, Literal, Callable, Self
 import torch
 from torch import Tensor, nn
 from torch.nn.functional import softmax, linear
@@ -657,6 +658,7 @@ class ChemBFN(nn.Module):
         y: Optional[Tensor],
         mask: Optional[Tensor] = None,
         return_output_dist: bool = False,
+        reduction: Literal["none", "mean", "sum"] = "mean",
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """
         Compute continuous-time loss.
@@ -666,12 +668,14 @@ class ChemBFN(nn.Module):
         :param y: conditioning vector;        shape: (n_b, 1, n_f)
         :param mask: in-text mask;            shape: (n_b, n_t)
         :param return_output_dist: whether to return the output distribution
+        :param reduction: `'none'`, `'mean'` or `'sum'`; default is `'mean'`
         :type x: torch.Tensor
         :type t: torch.Tensor
         :type y: torch.Tensor | None
         :type mask: torch.Tensor | None
         :type return_output_dist: bool
-        :returns: continuous-time loss;       shape: () \n
+        :type reduction: str
+        :returns: continuous-time loss;       shape: () or (n_b, n_t, n_vocab) \n
                   output distribution;        shape: (n_b, n_t, n_vocab) or `None`
         :rtype: tuple
         """
@@ -685,9 +689,13 @@ class ChemBFN(nn.Module):
             theta = e_x * mask + (1 - mask) * theta
         e_hat = self.discrete_output_distribution(theta, t, y, None)
         cts_loss = self.K * (e_x - e_hat).pow(2) * self.calc_cts_alpha(t)
+        if reduction == "mean":
+            cts_loss = cts_loss.mean()
+        elif reduction == "sum":
+            cts_loss = cts_loss.sum()
         if return_output_dist:
-            return cts_loss.mean(), e_hat
-        return cts_loss.mean(), None
+            return cts_loss, e_hat
+        return cts_loss, None
 
     @torch.inference_mode()
     def reconstruction_loss(self, x: Tensor, t: Tensor, y: Optional[Tensor]) -> Tensor:
