@@ -246,6 +246,10 @@ _class_ bayesianflow_for_chem.train.__Model__(_model_, _mlp=None_, _scorer=None_
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Save the trained model.
 
+&nbsp;&nbsp;&nbsp; <span style='color: grey'>_attribute_</span> __best_of_k__
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Explorative modelling 'best of k' value.
+
 ---
 
 _class_ bayesianflow_for_chem.train.__Regressor__(_model_, _mlp_, _hparam=DEFAULT_REGRESSOR_HPARAM_)
