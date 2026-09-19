@@ -149,7 +149,7 @@ This is the end of the program, not with a bang but a whimper.
 If you find this project helpful, please cite us:
 1. N. Tao, and M. Abe, J. Chem. Inf. Model., 2025, 65, 1178-1187.
 2. N. Tao, T. Nagai, and M. Abe, CICSJ Bulletin, 2025, 43, 10-14.
-3. N. Tao, and M. Abe, J. Cheminform., 2026, in press.
+3. N. Tao, and M. Abe, J. Cheminform., 2026, 18, 130.
 4. N. Tao, PhD thesis, Hiroshima University, 2026.
 """
 

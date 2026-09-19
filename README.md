@@ -135,6 +135,9 @@ Out-of-distribution generation and fast sampling:
     title={Sampling Out-of-Distribution Chemical Spaces via Bayesian Flow}, 
     author={Tao, Nianze and Abe, Minori},
     journal={Journal of Cheminformatics},
+    volume={18},
+    number={1},
+    pages={130},
     year={2026},
     doi={10.1186/s13321-026-01248-9}, 
 }
