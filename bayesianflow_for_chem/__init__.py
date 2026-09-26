@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from .model import ChemBFN, MLP, EnsembleChemBFN
 
 assert set(_models + _submodules) == set(__all__)
+# この世の99％はカスである。
 
 
 def main() -> None:
