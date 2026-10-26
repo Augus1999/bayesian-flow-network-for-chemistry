@@ -16,15 +16,13 @@ permissions:
   issues: none
 
 jobs:
-  build:
-
+  test_on_unix:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.11", "3.12", "3.13", "3.14"]
-
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
@@ -36,21 +34,35 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install pytest pandas
         pip install -r requirements.txt
-  
-  setup-compiler:
-    runs-on: windows-latest
-    steps: 
-      - uses: egor-tensin/setup-clang@v2
-        with:
-          version: latest
-      - name: set up C++ compiler
-        run: |
-          set CXX=clang-cl
-
-  test:
-    runs-on: ${{ matrix.os }}
-    steps:
+        pip install .
     - name: Test with pytest
       run: |
+        pytest
+  
+  test_on_windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install pytest pandas
+        pip install -r requirements.txt
         pip install .
+    - uses: egor-tensin/setup-clang@v2
+      with:
+        version: latest
+    - name: set up C++ compiler
+      run: |
+        set CXX=clang-cl
+    - name: Test with pytest
+      run: |
         pytest
