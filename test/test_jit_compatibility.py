@@ -23,7 +23,7 @@ def test():
     assert (x3 != x1).float().sum() == 0
     try:
         model.compile(fullgraph=True)
-        x2 = model.forward(*example_args)
+        x2 = model(*example_args)
         assert (x2 != x1).float().sum() == 0
     except RuntimeError as e:
         if "not supported " in e.__str__():

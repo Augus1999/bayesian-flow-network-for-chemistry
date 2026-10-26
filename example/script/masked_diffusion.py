@@ -50,7 +50,7 @@ class LLaDA(ChemBFN):
 
     def calc_loss(self, x: Tensor, t: Tensor, y: Optional[Tensor] = None) -> Tensor:
         noisy_batch, masked_indices, p_mask = self._forward(x, t)
-        logits = self.forward(noisy_batch, t, None, y)
+        logits = self(noisy_batch, t, None, y)
         token_loss = (
             torch.nn.functional.cross_entropy(
                 logits[masked_indices], x[masked_indices], reduction="none"
@@ -79,9 +79,9 @@ class LLaDA(ChemBFN):
         ):
             t = t.view(1, 1, 1).repeat(batch_size, 1, 1)
             mask_index = x == (self.K - 1)
-            logits = self.forward(x, t, None, None)
+            logits = self(x, t, None, None)
             if y is not None:
-                cond_logits = self.forward(x, t, None, y)
+                cond_logits = self(x, t, None, y)
                 logits = logits + (guidance_strength + 1) * (cond_logits - logits)
             if token_mask is not None:
                 logits = logits.masked_fill_(token_mask, 0.0)
@@ -104,7 +104,7 @@ class LLaDAModel(Model):
         t = torch.rand((x.shape[0], 1, 1), device=x.device)
         if self.mlp is not None and "value" in batch:
             y = batch["value"]
-            y = self.mlp.forward(y)
+            y = self.mlp(y)
             if y.dim() == 2:
                 y = y[:, None, :]
             y_mask = torch.nn.functional.dropout(

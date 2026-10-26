@@ -126,9 +126,9 @@ def _inference(
         t = torch.ones((x.shape[0], 1, 1), device=x.device)
         mask = (x != 0).float()[..., None]
         theta = torch.nn.functional.one_hot(x, model.embedding.weight.shape[-1])
-        z = model.forward(2 * theta.float() - 1, t, mask, None)
+        z = model(2 * theta.float() - 1, t, mask, None)
         mb = z[x == 2].view(z.shape[0], -1) if graphmodule_sar_flag else z[::, 0]
-        return mlp.forward(mb)
+        return mlp(mb)
     return model.inference(x, mlp)
 
 

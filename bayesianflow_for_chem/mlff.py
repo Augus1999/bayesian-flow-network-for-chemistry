@@ -483,7 +483,7 @@ class MLFF(Calculator):
             lattice = (lattice * pbc[:, None])[None, ...].to(self.device)
         else:
             lattice = None
-        s, v = self.model.forward(z, r, batch, lattice)
+        s, v = self.model(z, r, batch, lattice)
         results = {
             "energy": s.detach().cpu().item() * self.scale,
             "forces": v[0].numpy(force=True) * self.scale,

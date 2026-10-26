@@ -61,7 +61,7 @@ class MLP(nn.Module):
         if self.class_input:
             x = x.to(dtype=torch.long)
         for layer in self.layers[:-1]:
-            x = torch.selu(layer.forward(x))
+            x = torch.selu(layer(x))
         return self.layers[-1](x)
 
     @classmethod
@@ -644,11 +644,11 @@ class ChemBFN(nn.Module):
         """
         theta = 2 * theta - 1  # rescale to [-1, 1]
         if w is None:
-            return softmax(self.forward(theta, t, None, y), -1)
+            return softmax(self(theta, t, None, y), -1)
         if y is None:
-            return softmax(self.forward(theta, t, None, None), -1)
-        p_cond = self.forward(theta, t, None, y)
-        p_uncond = self.forward(theta, t, None, None)
+            return softmax(self(theta, t, None, None), -1)
+        p_cond = self(theta, t, None, y)
+        p_uncond = self(theta, t, None, None)
         return softmax((1 + w) * p_cond - w * p_uncond, -1)
 
     def cts_loss(
@@ -715,7 +715,7 @@ class ChemBFN(nn.Module):
         mu = beta * (self.K * nn.functional.one_hot(x, self.K).float() - 1)
         sigma = (beta * self.K).sqrt()
         theta = softmax(mu + sigma * torch.randn_like(mu), -1)
-        logits = self.forward(2 * theta - 1, t, None, y)
+        logits = self(2 * theta - 1, t, None, y)
         # compute negative log probability
         x, logits = torch.broadcast_tensors(x[..., None], logits)
         return (-logits.gather(-1, x[..., :1]).squeeze(-1)).mean()
@@ -1046,14 +1046,14 @@ class ChemBFN(nn.Module):
         t = torch.ones((x.shape[0], 1, 1), device=x.device)
         mask = (x != 0).float()[..., None]
         theta = 2 * torch.nn.functional.one_hot(x, self.K).float() - 1
-        z = self.forward(theta, t, mask, None)
+        z = self(theta, t, mask, None)
         if embed_fn is None:
             mb = (
                 z[x == 2].view(z.shape[0], -1) if self.semi_autoregressive else z[::, 0]
             )
         else:
             mb = embed_fn(z)
-        return mlp.forward(mb)
+        return mlp(mb)
 
     @classmethod
     def from_checkpoint(
@@ -1225,9 +1225,9 @@ class EnsembleChemBFN(ChemBFN):
         #    4. vmap requires all models have the same size but it's not always that case
         #       since we sometimes use different ranks of LoRA in finetuning.
         for name, model in self.models.items():
-            p_uncond_ = model.forward(theta, t, None, None)
+            p_uncond_ = model(theta, t, None, None)
             p_uncond += p_uncond_ * self.adapter_weights[name]
-            p_cond_ = model.forward(theta, t, None, y[name])
+            p_cond_ = model(theta, t, None, y[name])
             p_cond += p_cond_ * self.adapter_weights[name]
         return softmax((1 + w) * p_cond - w * p_uncond, -1)
 
@@ -1249,7 +1249,7 @@ class EnsembleChemBFN(ChemBFN):
         if isinstance(c, list):
             c = dict(zip([f"val_{i}" for i in range(nc)], c))
         for name, model in self.cond_heads.items():
-            y = model.forward(c[name])
+            y = model(c[name])
             if y.dim() == 2:
                 y = y[:, None, :]
             out[name] = y
@@ -1476,7 +1476,8 @@ class EnsembleChemBFN(ChemBFN):
         This method should be called, if necessary, before `torch.compile()`.
 
         :param quantise_method: quantisation method;
-                                default is `bayesianflow_for_chem.tool.quantise_model_`
+                                default is 
+                                :func:`bayesianflow_for_chem.tool.quantise_model_`
         :type quantise_method: callable | None
         :return:
         :rtype: None
@@ -1487,6 +1488,17 @@ class EnsembleChemBFN(ChemBFN):
             quantise_method = quantise_model_
         for _, v in self.models.items():
             quantise_method(v)
+
+    def compile(self, *args, **kwargs) -> None:
+        """
+        Compile subodules' forward using :func:`torch.compile`. \n
+        The subdules' `__call__` methods are compiled and all arguments are passed as-is
+        to :func:`torch.compile`. \n
+        See :func:`torch.compile` for details on the arguments for this method.
+        """
+        for _, v in self.models.items():
+            v.compile(*args, **kwargs)
+        return super().compile(*args, **kwargs)
 
     def forward(self, *_, **__) -> None:
         """

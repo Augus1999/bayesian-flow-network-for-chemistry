@@ -188,7 +188,7 @@ class Model(LightningModule):
             mask = None
         if self.mlp is not None and "value" in batch:
             y = batch["value"]
-            y = self.mlp.forward(y)
+            y = self.mlp(y)
             if y.dim() == 2:
                 y = y[:, None, :]
             y_mask = F.dropout(torch.ones_like(t), self.hparams.uncond_prob, True, True)
@@ -459,7 +459,7 @@ class GNN(LightningModule):
 
     def training_step(self, batch: Dict[str, Tensor]) -> Tensor:
         z, r, b, lattice, label, n_b = self._prep_data(batch)
-        y, dy = self.model.forward(z, r, b, lattice)
+        y, dy = self.model(z, r, b, lattice)
         loss_dict = loss_calc({"scalar": y, "vector": dy}, label, self.mse_fn)
         scalar_loss = loss_dict["scalar"]
         self.log("scalar_loss", scalar_loss.item(), batch_size=n_b)
@@ -470,7 +470,7 @@ class GNN(LightningModule):
     def validation_step(self, batch: Dict[str, Tensor]) -> None:
         z, r, b, lattice, label, n_b = self._prep_data(batch)
         with torch.set_grad_enabled(True):
-            y, dy = self.model.forward(z, r, b, lattice)
+            y, dy = self.model(z, r, b, lattice)
             val_loss_dict = loss_calc({"scalar": y, "vector": dy}, label, self.mae_fn)
             if "vector" in val_loss_dict:
                 self._ema(val_loss_dict, "val", n_b)
@@ -480,7 +480,7 @@ class GNN(LightningModule):
     def test_step(self, batch: Dict[str, Tensor]) -> None:
         z, r, b, lattice, label, n_b = self._prep_data(batch)
         with torch.set_grad_enabled(True):
-            y, dy = self.model.forward(z, r, b, lattice)
+            y, dy = self.model(z, r, b, lattice)
             test_loss_dict_1 = loss_calc(
                 {"scalar": y, "vector": dy}, label, self.mae_fn
             )
