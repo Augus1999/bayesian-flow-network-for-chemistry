@@ -532,12 +532,13 @@ def quantise_model_(model: ChemBFN) -> None:
     :return:
     :rtype: None
     """
+    from torchao.quantization.granularity import PerTensor
     from torchao.quantization.quant_api import (
         quantize_,
-        Int8DynamicActivationInt8WeightConfig,
+        Int8WeightOnlyConfig,
     )
 
-    quantize_(model, Int8DynamicActivationInt8WeightConfig())
+    quantize_(model, Int8WeightOnlyConfig(granularity=PerTensor()))
 
 
 def adjust_lora_(model: ChemBFN, lora_scale: float = 1.0) -> None:
