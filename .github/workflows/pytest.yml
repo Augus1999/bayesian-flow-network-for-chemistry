@@ -36,6 +36,20 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install pytest pandas
         pip install -r requirements.txt
+  
+  setup-compiler:
+    runs-on: windows-latest
+    steps: 
+      - uses: egor-tensin/setup-clang@v2
+        with:
+          version: latest
+      - name: set up C++ compiler
+        run: |
+          set CXX=clang-cl
+
+  test:
+    runs-on: ${{ matrix.os }}
+    steps:
     - name: Test with pytest
       run: |
         pip install .
