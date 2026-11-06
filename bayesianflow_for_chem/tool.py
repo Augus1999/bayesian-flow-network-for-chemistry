@@ -39,7 +39,9 @@ def _find_device() -> torch.device:
         return torch.device("mps")
     if torch.xpu.is_available():
         return torch.device("xpu")
-    # TODO: waiting for a native way to use xla devices
+    if hasattr(torch, "tpu") and torch.accelerator.is_available():
+        # triggered when `TorchTPU` installed
+        return torch.device("tpu")
     return torch.device("cpu")
 
 
@@ -524,8 +526,8 @@ def optimise(
 
 def quantise_model_(model: ChemBFN) -> None:
     """
-    In-place dynamic quantisation of the trained model to `int8` data type. \n
-    Due to some limitations of `torchao` module, not all layers will be quantised.
+    In-place quantisation of the trained model to `int8` data type. \n
+    Due to limitations of `torchao` module, not all layers will be quantised.
 
     :param model: trained ChemBFN model
     :type model: bayesianflow_for_chem.model.ChemBFN

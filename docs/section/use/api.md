@@ -200,7 +200,7 @@ bayesianflow_for_chem.tool.__optimise__(_model_, _x_, _sample_step=100_, _y=None
 
 bayesianflow_for_chem.tool.__quantise_model\___(_model_) &#8594; None
 
-&nbsp;&nbsp;&nbsp; In-place dynamic quantise the trained model.
+&nbsp;&nbsp;&nbsp; In-place quantise the trained model.
 
 bayesianflow_for_chem.tool.__adjust_lora\___(_model_, _lora_scale=0.1_) &#8594; None
 
