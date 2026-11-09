@@ -41,7 +41,12 @@ def _find_device() -> torch.device:
         return torch.device("xpu")
     if hasattr(torch, "tpu") and torch.accelerator.is_available():
         # triggered when `TorchTPU` installed
+        # see: https://torchtpu.readthedocs.io/en/latest/
         return torch.device("tpu")
+    if hasattr(torch, "npu") and torch.accelerator.is_available():
+        # tirggered when `TorchNPU` installed
+        # see: https://www.hiascend.com/en-sg/document/detail/en/Pytorch/
+        return torch.device("npu")
     return torch.device("cpu")
 
 
