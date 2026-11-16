@@ -64,7 +64,7 @@ def main() -> None:
 
     _is_windows = platform.system() == "Windows"
     if _is_windows:
-        import colorama
+        import colorama  # type: ignore
 
         colorama.just_fix_windows_console()
     main_script(__version__)

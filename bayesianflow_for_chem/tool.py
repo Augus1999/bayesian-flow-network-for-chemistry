@@ -532,7 +532,7 @@ def optimise(
 def quantise_model_(model: ChemBFN) -> None:
     """
     In-place quantisation of the trained model to `int8` data type. \n
-    Due to limitations of `torchao` module, not all layers will be quantised.
+    Only linear layer weights will be quantised.
 
     :param model: trained ChemBFN model
     :type model: bayesianflow_for_chem.model.ChemBFN
