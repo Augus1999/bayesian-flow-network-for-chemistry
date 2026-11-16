@@ -56,6 +56,7 @@ setup(
     python_requires=">=3.11",
     install_requires=[
         "ase>=3.25.0",
+        "rdkit>=2025.3.5,!=2026.9.2;platform_system=='Darwin'",
         "rdkit>=2025.3.5",
         "torch>=2.8.0",
         "torchao>=0.12",
