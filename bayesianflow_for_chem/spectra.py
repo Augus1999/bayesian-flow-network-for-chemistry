@@ -7,7 +7,7 @@ Build and analysis spectra.
 import numpy as np
 from scipy.stats import wasserstein_distance
 
-# How may Denmarks of carbon dioxide does your datacentre emit?
+# How many Denmarks of carbon dioxide does your datacentre emit?
 
 
 def build_uv_vis_spectrum(
