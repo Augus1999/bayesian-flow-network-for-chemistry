@@ -493,7 +493,7 @@ class _TrainConfig:
     molecule_tag: str = None
     objective_tag: List[str] = None
     enforce_validity: bool = True
-    best_of_k: int = 1
+    best_of_k: int = 1  # added in v3.0.1
     logger_name: str = "csv"
     logger_path: str = None
     checkpoint_save_path: str = None

@@ -7,6 +7,8 @@ Build and analysis spectra.
 import numpy as np
 from scipy.stats import wasserstein_distance
 
+# How may Denmarks of carbon dioxide does your datacentre emit?
+
 
 def build_uv_vis_spectrum(
     etoscs: np.ndarray, etenergies: np.ndarray, lambdas: np.ndarray
@@ -75,8 +77,7 @@ def build_raman_spectrum(
     return (l * a[:, None]).sum(0)
 
 
-# We'd better be more inclusive and diverse.
-# And, it's necessary to ban all social media for all ages.
+# No artists, no sales.
 
 
 def spectra_wasserstein_score(

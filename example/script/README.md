@@ -63,7 +63,7 @@ model.enable_lora(r=4, ...)  # or r=8, 16, ...
 >>> quantise_model_(model)
 ```
 
-Now `model` is your dyanmically quantised model that can be directly used.
+Now `model` is your quantised model that can be directly used.
 
 ## A note for customising tokenisation and vocabulary
 
